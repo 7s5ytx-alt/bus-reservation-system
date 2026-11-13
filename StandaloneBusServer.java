@@ -37,6 +37,10 @@ public class StandaloneBusServer {
         String arrivalTime;
         String duration;
         int fare;
+        volatile Double latitude;
+        volatile Double longitude;
+        volatile Double locationAccuracy;
+        volatile long locationUpdatedAt;
         Map<Integer, BookingRecord> bookings = new ConcurrentHashMap<>();
 
         public Bus(int no, String name, String src, String dest, int seats) {
@@ -78,6 +82,7 @@ public class StandaloneBusServer {
     }
 
     private static final Map<Integer, Bus> busMap = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> driverSessions = new ConcurrentHashMap<>();
     private static int nextId = 100;
     // Local development can override this path; cloud hosts use the working
     // directory. For durable cloud reservations, use the JDBC database module.
@@ -178,6 +183,9 @@ public class StandaloneBusServer {
         server.createContext("/api/book", new ApiBookHandler());
         server.createContext("/api/cancel", new ApiCancelHandler());
         server.createContext("/api/admin/buses", new AdminBusesHandler());
+        server.createContext("/api/track", new ApiTrackHandler());
+        server.createContext("/api/driver/login", new DriverLoginHandler());
+        server.createContext("/api/driver/location", new DriverLocationHandler());
 
         // Task 3 Endpoints
         server.createContext("/task3/", new StaticFileHandler("Task3_HTML_Servlet"));
@@ -209,7 +217,7 @@ public class StandaloneBusServer {
         Headers headers = exchange.getResponseHeaders();
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key");
+        headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key, X-Driver-Key");
     }
 
     private static void sendJson(HttpExchange exchange, int status, String json) throws IOException {
@@ -256,12 +264,18 @@ public class StandaloneBusServer {
                 && configuredKey.equals(exchange.getRequestHeaders().getFirst("X-Admin-Key"));
     }
 
+    private static Integer driverBusFromRequest(HttpExchange exchange) {
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.startsWith("Bearer ")) return null;
+        return driverSessions.get(authorization.substring("Bearer ".length()).trim());
+    }
+
     private static String busJson(Bus b) {
         int booked = b.bookings.size();
         return String.format(Locale.ROOT,
-                "{\"busNo\":%d,\"name\":\"%s\",\"src\":\"%s\",\"dest\":\"%s\",\"totalSeats\":%d,\"bookedSeats\":%d,\"availableSeats\":%d,\"agencyName\":\"%s\",\"driverName\":\"%s\",\"serviceType\":\"%s\",\"departure\":\"%s\",\"arrival\":\"%s\",\"duration\":\"%s\",\"fare\":%d}",
+                "{\"busNo\":%d,\"name\":\"%s\",\"src\":\"%s\",\"dest\":\"%s\",\"totalSeats\":%d,\"bookedSeats\":%d,\"availableSeats\":%d,\"agencyName\":\"%s\",\"driverName\":\"%s\",\"serviceType\":\"%s\",\"departure\":\"%s\",\"arrival\":\"%s\",\"duration\":\"%s\",\"fare\":%d,\"trackingAvailable\":%s}",
                 b.busNumber, escapeJson(b.busName), escapeJson(b.source), escapeJson(b.destination), b.totalSeats, booked, b.totalSeats - booked,
-                escapeJson(b.agencyName), escapeJson(b.driverName), escapeJson(b.serviceType), escapeJson(b.departureTime), escapeJson(b.arrivalTime), escapeJson(b.duration), b.fare);
+                escapeJson(b.agencyName), escapeJson(b.driverName), escapeJson(b.serviceType), escapeJson(b.departureTime), escapeJson(b.arrivalTime), escapeJson(b.duration), b.fare, b.locationUpdatedAt > 0);
     }
 
     private static Map<String, String> parseFormData(HttpExchange exchange) throws IOException {
@@ -384,6 +398,68 @@ public class StandaloneBusServer {
             } catch (NumberFormatException e) {
                 sendJson(exchange, 400, "{\"success\":false,\"message\":\"Bus number, capacity, and fare must be valid numbers\"}");
             }
+        }
+    }
+
+    // Public, read-only live location for a selected service.
+    static class ApiTrackHandler implements HttpHandler {
+        @Override public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(204, -1); return; }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) { sendJson(exchange, 405, "{\"success\":false,\"message\":\"Use GET\"}"); return; }
+            int busNo;
+            try { busNo = Integer.parseInt(parseQueryParams(exchange).getOrDefault("busNumber", "0")); }
+            catch (NumberFormatException e) { sendJson(exchange, 400, "{\"success\":false,\"message\":\"Invalid bus number\"}"); return; }
+            Bus bus = busMap.get(busNo);
+            if (bus == null) { sendJson(exchange, 404, "{\"success\":false,\"message\":\"Bus not found\"}"); return; }
+            boolean available = bus.locationUpdatedAt > 0 && bus.latitude != null && bus.longitude != null;
+            String json = String.format(Locale.ROOT, "{\"success\":true,\"busNo\":%d,\"driverName\":\"%s\",\"available\":%s,\"latitude\":%s,\"longitude\":%s,\"accuracy\":%s,\"updatedAt\":%d}",
+                    bus.busNumber, escapeJson(bus.driverName), available,
+                    available ? String.format(Locale.ROOT, "%.6f", bus.latitude) : "null",
+                    available ? String.format(Locale.ROOT, "%.6f", bus.longitude) : "null",
+                    available && bus.locationAccuracy != null ? String.format(Locale.ROOT, "%.1f", bus.locationAccuracy) : "null", bus.locationUpdatedAt);
+            sendJson(exchange, 200, json);
+        }
+    }
+
+    // Drivers authenticate with their assigned name, bus number, and a DRIVER_KEY
+    // configured only on the server. The returned session stays in memory.
+    static class DriverLoginHandler implements HttpHandler {
+        @Override public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(204, -1); return; }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { sendJson(exchange, 405, "{\"success\":false,\"message\":\"Use POST\"}"); return; }
+            String key = System.getenv("DRIVER_KEY");
+            if (key == null || key.isBlank()) { sendJson(exchange, 503, "{\"success\":false,\"message\":\"Driver tracking is not configured yet\"}"); return; }
+            Map<String, String> form = parseFormData(exchange);
+            try {
+                int busNo = Integer.parseInt(form.getOrDefault("busNumber", "0"));
+                String driver = form.getOrDefault("driverName", "").trim();
+                String accessKey = form.getOrDefault("accessKey", "");
+                Bus bus = busMap.get(busNo);
+                if (bus == null || !bus.driverName.equalsIgnoreCase(driver) || !key.equals(accessKey)) { sendJson(exchange, 401, "{\"success\":false,\"message\":\"Check your bus number, driver name, and access key\"}"); return; }
+                String token = UUID.randomUUID().toString(); driverSessions.put(token, busNo);
+                sendJson(exchange, 200, "{\"success\":true,\"token\":\"" + token + "\",\"busNo\":" + busNo + ",\"busName\":\"" + escapeJson(bus.busName) + "\"}");
+            } catch (NumberFormatException e) { sendJson(exchange, 400, "{\"success\":false,\"message\":\"Enter a valid bus number\"}"); }
+        }
+    }
+
+    static class DriverLocationHandler implements HttpHandler {
+        @Override public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(204, -1); return; }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) { sendJson(exchange, 405, "{\"success\":false,\"message\":\"Use POST\"}"); return; }
+            Integer busNo = driverBusFromRequest(exchange);
+            if (busNo == null) { sendJson(exchange, 401, "{\"success\":false,\"message\":\"Driver session is required\"}"); return; }
+            try {
+                Map<String, String> form = parseFormData(exchange);
+                double latitude = Double.parseDouble(form.getOrDefault("latitude", "999"));
+                double longitude = Double.parseDouble(form.getOrDefault("longitude", "999"));
+                double accuracy = Double.parseDouble(form.getOrDefault("accuracy", "0"));
+                if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || accuracy < 0) throw new NumberFormatException();
+                Bus bus = busMap.get(busNo); bus.latitude = latitude; bus.longitude = longitude; bus.locationAccuracy = accuracy; bus.locationUpdatedAt = System.currentTimeMillis();
+                sendJson(exchange, 200, "{\"success\":true,\"message\":\"Location shared\",\"updatedAt\":" + bus.locationUpdatedAt + "}");
+            } catch (NumberFormatException e) { sendJson(exchange, 400, "{\"success\":false,\"message\":\"Valid GPS coordinates are required\"}"); }
         }
     }
 

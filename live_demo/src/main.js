@@ -28,7 +28,7 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null
+  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
 };
 const coupons = {
   WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
@@ -60,6 +60,14 @@ async function refreshAvailability() {
   } catch { state.seats = fallbackSeats(bus); state.connected = false; state.lastSyncedAt = null; }
 }
 
+async function refreshTracking() {
+  try {
+    const response = await fetch(`${API_BASE}/track?busNumber=${activeBus().busNo}`);
+    if (!response.ok) throw new Error();
+    state.tracking = await response.json();
+  } catch { state.tracking = null; }
+}
+
 async function loadBuses() {
   try {
     const response = await fetch(`${API_BASE}/buses`);
@@ -67,9 +75,16 @@ async function loadBuses() {
     state.buses = (await response.json()).map((bus) => ({ ...(tripDetails[bus.busNo] ?? { rating: '4.3' }), ...bus }));
   } catch { /* Preview mode uses local sample data. */ }
   await refreshAvailability();
+  await refreshTracking();
 }
 
 const availableSeats = () => state.seats.filter((seat) => !seat.isBooked).length;
+
+function renderCityPicker(field, label, value, cities) {
+  const open = state.cityPicker === field;
+  const matches = cities.filter((city) => city.toLowerCase().includes(state.cityFilter.toLowerCase()));
+  return `<div class="city-picker ${open ? 'open' : ''}" data-picker="${field}"><label>${label}</label><button type="button" class="city-trigger" data-picker="${field}"><strong>${escapeHtml(value)}</strong><small>${label === 'From' ? 'Departure city' : 'Arrival city'}</small><b>⌄</b></button>${open ? `<div class="city-popover"><input class="city-filter" placeholder="Search city…" value="${escapeHtml(state.cityFilter)}" autocomplete="off"><div class="city-options">${matches.length ? matches.map((city) => `<button type="button" data-city="${escapeHtml(city)}" data-field="${field}">${escapeHtml(city)}</button>`).join('') : '<span>No city found</span>'}</div></div>` : ''}</div>`;
+}
 
 function renderService(bus) {
   const chosen = bus.busNo === state.selectedBusNo;
@@ -91,7 +106,10 @@ function renderPanel() {
   const bus = activeBus(); const selected = state.seats.find((seat) => seat.seatNo === state.selectedSeat);
   const fare = selected ? bus.fare : 0;
   const discount = discountFor(fare);
+  const liveTrack = state.tracking?.available;
+  const updated = liveTrack ? new Date(state.tracking.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   return `<div class="panel-heading"><div><p class="eyebrow">Choose your seat</p><h2>${escapeHtml(bus.name)}</h2></div><span>${escapeHtml(bus.type)}</span></div>
+    <section class="tracking-card ${liveTrack ? 'live' : ''}"><div class="tracking-head"><div><b>${liveTrack ? '● Live bus location' : '○ Driver GPS offline'}</b><small>${liveTrack ? `Updated ${updated} · ${Math.round(state.tracking.accuracy || 0)}m accuracy` : `Driver ${escapeHtml(bus.driverName)} has not started sharing yet`}</small></div><button type="button" id="refresh-track">Refresh</button></div><div class="route-map"><span>${escapeHtml(bus.src)}</span><i></i><em class="bus-marker">🚌</em><span>${escapeHtml(bus.dest)}</span></div></section>
     <div class="legend"><i></i> Available <i class="key-selected"></i> Selected <i class="key-booked"></i> Booked</div>
     <div class="bus-shell"><div class="wheel">◔</div><div class="seat-grid">${renderSeatMap()}</div></div>
     <form id="checkout-form" class="checkout"><label for="passenger">Passenger details</label><input id="passenger" placeholder="Full name as on ID" maxlength="100" value="${escapeHtml(state.passengerName)}" required ${selected ? '' : 'disabled'}>
@@ -115,9 +133,9 @@ function render() {
   const services = matchingBuses();
   const cities = [...new Set(state.buses.flatMap((service) => [service.src, service.dest]))].sort();
   const cityOptions = cities.map((city) => `<option value="${escapeHtml(city)}"></option>`).join('');
-  document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="#top"><b>T</b>triply</a><nav><a class="active" href="#search">Bus tickets</a><a href="#how-it-works">How it works</a><a href="/admin.html">Agency portal</a><a href="#support">Help</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? `Live updates on${state.lastSyncedAt ? ` · synced ${state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Preview mode'}</div></header>
+  document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="#top"><b>T</b>triply</a><nav><a class="active" href="#search">Bus tickets</a><a href="#how-it-works">How it works</a><a href="/driver.html">Driver portal</a><a href="/admin.html">Agency portal</a><a href="#support">Help</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? `Live updates on${state.lastSyncedAt ? ` · synced ${state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Preview mode'}</div></header>
   <main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>
-  <form class="search-card" id="search-form"><div class="search-field"><label for="from">From</label><input id="from" list="cities" value="${escapeHtml(state.searchFrom)}"><small>Departure city</small></div><button class="swap" type="button" aria-label="Swap route">⇄</button><div class="search-field"><label for="to">To</label><input id="to" list="cities" value="${escapeHtml(state.searchTo)}"><small>Arrival city</small></div><datalist id="cities">${cityOptions}</datalist><div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span></div></section>
+  <form class="search-card" id="search-form">${renderCityPicker('from', 'From', state.searchFrom, cities)}<button class="swap" type="button" aria-label="Swap route">⇄</button>${renderCityPicker('to', 'To', state.searchTo, cities)}<div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section>
   <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><button id="modify-search">Modify search</button></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try one of the listed city pairs or change your journey date.</span></div>`}</section>
   <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
   bindEvents();
@@ -126,8 +144,6 @@ function render() {
 function bindEvents() {
   document.querySelector('#search-form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    state.searchFrom = document.querySelector('#from').value.trim();
-    state.searchTo = document.querySelector('#to').value.trim();
     state.travelDate = document.querySelector('#date').value;
     const services = matchingBuses();
     if (services.length) { state.selectedBusNo = services[0].busNo; state.selectedSeat = null; await refreshAvailability(); }
@@ -135,9 +151,15 @@ function bindEvents() {
     render();
     document.querySelector('#results').scrollIntoView({ behavior: 'smooth' });
   });
-  document.querySelector('.swap').addEventListener('click', () => { const from = document.querySelector('#from'); const to = document.querySelector('#to'); [from.value, to.value] = [to.value, from.value]; });
+  document.querySelector('.swap').addEventListener('click', () => { [state.searchFrom, state.searchTo] = [state.searchTo, state.searchFrom]; render(); });
+  document.querySelectorAll('.city-trigger').forEach((button) => button.addEventListener('click', () => { state.cityPicker = state.cityPicker === button.dataset.picker ? '' : button.dataset.picker; state.cityFilter = ''; render(); if (state.cityPicker) setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); }));
+  const cityFilter = document.querySelector('.city-filter');
+  if (cityFilter) cityFilter.addEventListener('input', (event) => { state.cityFilter = event.target.value; render(); setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); });
+  document.querySelectorAll('.city-options button').forEach((button) => button.addEventListener('click', () => { if (button.dataset.field === 'from') state.searchFrom = button.dataset.city; else state.searchTo = button.dataset.city; state.cityPicker = ''; state.cityFilter = ''; render(); }));
   document.querySelector('#modify-search').addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
-  document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); render(); }));
+  document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); await refreshTracking(); render(); }));
+  const refreshTrack = document.querySelector('#refresh-track');
+  if (refreshTrack) refreshTrack.addEventListener('click', async () => { refreshTrack.textContent = 'Checking…'; await refreshTracking(); render(); });
   document.querySelectorAll('.seat:not(.booked)').forEach((seat) => seat.addEventListener('click', () => { state.selectedSeat = Number(seat.dataset.seat); render(); }));
   const passenger = document.querySelector('#passenger');
   const checkout = document.querySelector('#checkout-form');
@@ -186,7 +208,9 @@ render();
 setInterval(async () => {
   if (!state.searched) return;
   const before = JSON.stringify(state.seats);
+  const previousTracking = JSON.stringify(state.tracking);
   const wasConnected = state.connected;
   await refreshAvailability();
-  if (before !== JSON.stringify(state.seats) || wasConnected !== state.connected) render();
+  await refreshTracking();
+  if (before !== JSON.stringify(state.seats) || previousTracking !== JSON.stringify(state.tracking) || wasConnected !== state.connected) render();
 }, 3000);
