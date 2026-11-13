@@ -125,9 +125,15 @@ function renderPopularBus(bus) {
 }
 
 function renderSeatMap() {
+  // Keep each section of the coach aligned as 2 + aisle + 2 seats. Splitting
+  // after a full row prevents the driver divider from leaving an empty half-row.
+  const splitAt = Math.max(4, Math.floor(state.seats.length / 8) * 4);
   return state.seats.map((seat, index) => {
-    const aisle = index === Math.ceil(state.seats.length / 2) ? '<div class="driver">Driver</div>' : '';
-    return `${aisle}<button type="button" class="seat ${seat.isBooked ? 'booked' : ''} ${seat.seatNo === state.selectedSeat ? 'chosen' : ''}" data-seat="${seat.seatNo}" ${seat.isBooked ? 'disabled' : ''} aria-label="Seat ${seat.seatNo}${seat.isBooked ? ', booked' : ', available'}">${seat.seatNo}</button>`;
+    const startsRearSection = index === splitAt;
+    const localIndex = index < splitAt ? index : index - splitAt;
+    const rightSide = localIndex % 4 >= 2 ? 'seat-right' : '';
+    const divider = startsRearSection ? '<div class="driver" aria-label="Driver cabin">Driver cabin</div>' : '';
+    return `${divider}<button type="button" class="seat ${rightSide} ${seat.isBooked ? 'booked' : ''} ${seat.seatNo === state.selectedSeat ? 'chosen' : ''}" data-seat="${seat.seatNo}" ${seat.isBooked ? 'disabled' : ''} aria-label="Seat ${seat.seatNo}${seat.isBooked ? ', booked' : ', available'}">${seat.seatNo}</button>`;
   }).join('');
 }
 
@@ -141,10 +147,10 @@ function renderPanel() {
     <section class="tracking-card ${liveTrack ? 'live' : ''}"><div class="tracking-head"><div><b>${liveTrack ? '● Live bus location' : '○ Driver GPS offline'}</b><small>${liveTrack ? `Updated ${updated} · ${Math.round(state.tracking.accuracy || 0)}m accuracy` : `Driver ${escapeHtml(bus.driverName)} has not started sharing yet`}</small></div><button type="button" id="refresh-track">Refresh</button></div><div class="route-map"><span>${escapeHtml(bus.src)}</span><i></i><em class="bus-marker">🚌</em><span>${escapeHtml(bus.dest)}</span></div></section>
     <div class="legend"><i></i> Available <i class="key-selected"></i> Selected <i class="key-booked"></i> Booked</div>
     <div class="bus-shell"><div class="wheel">◔</div><div class="seat-grid">${renderSeatMap()}</div></div>
-    <form id="checkout-form" class="checkout"><label for="passenger">Passenger details</label><input id="passenger" placeholder="Full name as on ID" maxlength="100" value="${escapeHtml(state.passengerName)}" required ${selected ? '' : 'disabled'}>
-      <label class="coupon-label" for="coupon">Promo code</label><div class="coupon-row"><input id="coupon" placeholder="Enter coupon code" value="${escapeHtml(state.coupon)}" ${selected ? '' : 'disabled'}><button type="button" id="apply-coupon" ${selected ? '' : 'disabled'}>Apply</button></div><div class="coupon-chips">${Object.entries(coupons).map(([code, offer]) => `<button type="button" class="coupon-chip ${state.coupon === code ? 'active' : ''}" data-coupon="${code}" ${selected ? '' : 'disabled'}><b>${code}</b><span>${offer.label}</span></button>`).join('')}</div><p class="coupon-message ${state.couponMessage.startsWith('Applied') ? 'valid' : ''}">${escapeHtml(state.couponMessage || 'Select an offer or enter a promo code')}</p>
+    <form id="checkout-form" class="checkout"><label for="passenger">Passenger details <span class="field-hint">${selected ? 'Required for your ticket' : 'Choose a seat to continue'}</span></label><input id="passenger" placeholder="Full name as on ID" maxlength="100" value="${escapeHtml(state.passengerName)}" required ${selected ? '' : 'disabled'}>
+      <label class="coupon-label" for="coupon">Promo code <span class="field-hint">${selected ? 'Optional' : 'Unlocks after seat selection'}</span></label><div class="coupon-row"><input id="coupon" placeholder="Enter coupon code" value="${escapeHtml(state.coupon)}" ${selected ? '' : 'disabled'}><button type="button" id="apply-coupon" ${selected ? '' : 'disabled'}>Apply</button></div><div class="coupon-chips">${Object.entries(coupons).map(([code, offer]) => `<button type="button" class="coupon-chip ${state.coupon === code ? 'active' : ''}" data-coupon="${code}" ${selected ? '' : 'disabled'}><b>${code}</b><span>${offer.label}</span></button>`).join('')}</div><p class="coupon-message ${state.couponMessage.startsWith('Applied') ? 'valid' : ''}">${escapeHtml(state.couponMessage || (selected ? 'Select an offer or enter a promo code.' : 'Choose a seat to unlock promo codes.'))}</p>
       <div class="price-lines"><div><span>${selected ? `Seat ${selected.seatNo}` : 'Select a seat'}</span><strong>${selected ? money.format(fare) : '—'}</strong></div>${discount ? `<div class="discount"><span>Coupon discount</span><strong>−${money.format(discount)}</strong></div>` : ''}<div class="total"><span>Total payable</span><strong>${selected ? money.format(bookingTotal(fare)) : '—'}</strong></div></div>
-      <button type="submit" ${selected ? '' : 'disabled'}>Review & pay <b>→</b></button><p id="booking-message">${state.connected ? 'Secure demo checkout · no real payment is collected.' : 'Preview mode · start the Java server for a live reservation.'}</p></form>`;
+      <button type="submit" ${selected ? '' : 'disabled'}>${selected ? 'Review & pay <b>→</b>' : 'Choose a seat to continue'}</button><p id="booking-message">${state.connected ? 'Secure demo checkout · no real payment is collected.' : 'Preview mode · start the Java server for a live reservation.'}</p></form>`;
 }
 
 function renderPaymentModal() {

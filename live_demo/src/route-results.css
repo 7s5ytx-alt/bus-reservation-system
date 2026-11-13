@@ -16,6 +16,15 @@
 .empty-results span { font-size: 13px; }
 
 /* Booking micro-interactions and demo checkout */
+.seat-grid .seat-right { grid-column: 4; }
+.seat-grid .driver { display:flex; align-items:center; min-height:26px; padding:3px 0; color:#6d7d72; }
+.checkout label { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.checkout .field-hint { color:#718078; font-size:10px; font-weight:600; }
+.coupon-row button { min-width:72px; }
+.coupon-chip:disabled { opacity:.72; color:#607067; }
+.coupon-chip:disabled b { color:#3c765d; }
+.coupon-chip:disabled span { color:#718078; }
+@media(max-width:650px){ .checkout label{align-items:flex-start;flex-direction:column;gap:2px} }
 @keyframes rise-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes soft-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(39,115,88,.25); } 50% { box-shadow: 0 0 0 7px rgba(39,115,88,0); } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(20px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
