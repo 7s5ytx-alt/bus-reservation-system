@@ -8,6 +8,8 @@ const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV
   : 'https://bus-reservation-api-uqnc.onrender.com/api');
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+const isBookingPage = window.location.pathname.endsWith('/booking.html');
+const bookingQuery = new URLSearchParams(window.location.search);
 const tripDetails = {
   101: { departure: '21:30', arrival: '05:45', duration: '8h 15m', fare: 899, type: 'AC Sleeper', rating: '4.6' },
   102: { departure: '22:00', arrival: '06:30', duration: '8h 30m', fare: 1199, type: 'Volvo Multi-Axle', rating: '4.7' },
@@ -28,7 +30,7 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: '', passengers: '', passengerName: '', lastSyncedAt: null, searchFrom: '', searchTo: '', searchError: '', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
+  ], selectedBusNo: Number(bookingQuery.get('bus')) || 101, selectedSeat: null, seats: [], connected: false, searched: isBookingPage, travelDate: bookingQuery.get('date') || '', passengers: bookingQuery.get('passengers') || '', passengerName: '', lastSyncedAt: null, searchFrom: bookingQuery.get('from') || '', searchTo: bookingQuery.get('to') || '', searchError: '', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
 };
 const coupons = {
   WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
@@ -74,6 +76,10 @@ async function loadBuses() {
     if (!response.ok) throw new Error();
     state.buses = (await response.json()).map((bus) => ({ ...(tripDetails[bus.busNo] ?? { rating: '4.3' }), ...bus }));
   } catch { /* Preview mode uses local sample data. */ }
+  if (isBookingPage && (!state.searchFrom || !state.searchTo)) {
+    const bus = activeBus();
+    state.searchFrom = bus.src; state.searchTo = bus.dest; state.travelDate ||= tomorrow; state.passengers ||= '1';
+  }
   await refreshAvailability();
   await refreshTracking();
 }
@@ -134,17 +140,17 @@ function renderPaymentModal() {
   return `<div class="modal-backdrop" role="presentation"><section class="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title"><button class="modal-close" id="close-payment" aria-label="Close checkout">×</button><div class="checkout-badge">Secure demo checkout</div><h2 id="payment-title">Almost there, ${escapeHtml(state.passengerName.split(' ')[0] || 'traveller')}.</h2><p class="modal-subtitle">This is a practice payment screen. No money will be charged.</p>${details}<div class="payment-methods"><button class="payment-method ${state.paymentMethod === 'upi' ? 'selected' : ''}" data-method="upi"><b>UPI</b><span>Google Pay, PhonePe & more</span></button><button class="payment-method ${state.paymentMethod === 'card' ? 'selected' : ''}" data-method="card"><b>Card</b><span>Credit or debit card</span></button></div><div class="demo-payment"><span>${state.paymentMethod === 'upi' ? 'UPI ID' : 'Card number'}</span><strong>${state.paymentMethod === 'upi' ? 'traveller@triply' : '•••• 4242'}</strong><small>Demo details only</small></div><div class="payment-total"><span>Total payable</span><strong>${money.format(total)}</strong></div><button class="confirm-payment" id="confirm-payment">Pay ${money.format(total)} securely <b>→</b></button><p class="security-note">🔒 Demo mode — this creates a reservation only.</p></section></div>`;
 }
 
+function renderSearchForm(cities) {
+  return `<form class="search-card" id="search-form">${renderCityPicker('from', 'From', state.searchFrom, cities)}<button class="swap" type="button" aria-label="Swap route">⇄</button>${renderCityPicker('to', 'To', state.searchTo, cities)}<div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option value="" ${state.passengers ? '' : 'selected'} disabled>Select passengers</option><option value="1" ${state.passengers === '1' ? 'selected' : ''}>1 passenger</option><option value="2" ${state.passengers === '2' ? 'selected' : ''}>2 passengers</option><option value="3" ${state.passengers === '3' ? 'selected' : ''}>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form>${state.searchError ? `<p class="search-error" role="alert">${escapeHtml(state.searchError)}</p>` : ''}`;
+}
+
 function render() {
-  const bus = activeBus();
   const services = matchingBuses();
   const cities = [...new Set(state.buses.flatMap((service) => [service.src, service.dest]))].sort();
-  const cityOptions = cities.map((city) => `<option value="${escapeHtml(city)}"></option>`).join('');
-  document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="#top"><b>T</b>triply</a><nav><a class="active" href="#search">Bus tickets</a><a href="#how-it-works">How it works</a><a href="/driver.html">Driver portal</a><a href="/admin.html">Agency portal</a><a href="#support">Help</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? `Live updates on${state.lastSyncedAt ? ` · synced ${state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Preview mode'}</div></header>
-  <main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>
-  <form class="search-card" id="search-form">${renderCityPicker('from', 'From', state.searchFrom, cities)}<button class="swap" type="button" aria-label="Swap route">⇄</button>${renderCityPicker('to', 'To', state.searchTo, cities)}<div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option value="" ${state.passengers ? '' : 'selected'} disabled>Select passengers</option><option value="1" ${state.passengers === '1' ? 'selected' : ''}>1 passenger</option><option value="2" ${state.passengers === '2' ? 'selected' : ''}>2 passengers</option><option value="3" ${state.passengers === '3' ? 'selected' : ''}>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form>${state.searchError ? `<p class="search-error" role="alert">${escapeHtml(state.searchError)}</p>` : ''}<div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section>
-  <section class="popular-section" aria-labelledby="popular-title"><div class="popular-heading"><div><p class="eyebrow">Popular this week</p><h2 id="popular-title">Buses travellers are booking now.</h2></div><span><i class="live-dot"></i> Live seat availability</span></div><div class="popular-grid">${state.buses.slice(0, 4).map(renderPopularBus).join('')}</div></section>
-  <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><button id="modify-search">Modify search</button></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try one of the listed city pairs or change your journey date.</span></div>`}</section>
-  <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
+  const results = `<section class="results visible" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><a class="modify-link" href="/">← New search</a></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try another city pair from the search above.</span></div>`}</section>`;
+  const home = `<main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>${renderSearchForm(cities)}<div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section><section class="popular-section" aria-labelledby="popular-title"><div class="popular-heading"><div><p class="eyebrow">Popular this week</p><h2 id="popular-title">Buses travellers are booking now.</h2></div><span><i class="live-dot"></i> Live seat availability</span></div><div class="popular-grid">${state.buses.slice(0, 4).map(renderPopularBus).join('')}</div></section><section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main>`;
+  const booking = `<main id="top" class="booking-page"><section class="booking-search" id="search"><p class="eyebrow">Plan your ride</p><h1>Find the right bus.</h1>${renderSearchForm(cities)}</section>${results}</main>`;
+  document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="/"><b>T</b>triply</a><nav><a class="${isBookingPage ? '' : 'active'}" href="/">Bus tickets</a><a class="${isBookingPage ? 'active' : ''}" href="/booking.html">My booking</a><a href="/driver.html">Driver portal</a><a href="/admin.html">Agency portal</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? 'Live updates on' : 'Preview mode'}</div></header>${isBookingPage ? booking : home}<footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
   bindEvents();
 }
 
@@ -160,11 +166,15 @@ function bindEvents() {
     }
     state.searchError = '';
     state.travelDate = document.querySelector('#date').value;
+    if (!isBookingPage) {
+      const query = new URLSearchParams({ from: state.searchFrom, to: state.searchTo, date: state.travelDate, passengers: state.passengers });
+      window.location.href = `/booking.html?${query.toString()}`;
+      return;
+    }
     const services = matchingBuses();
     if (services.length) { state.selectedBusNo = services[0].busNo; state.selectedSeat = null; await refreshAvailability(); }
     state.searched = true;
     render();
-    document.querySelector('#results').scrollIntoView({ behavior: 'smooth' });
   });
   document.querySelector('.swap').addEventListener('click', () => { [state.searchFrom, state.searchTo] = [state.searchTo, state.searchFrom]; render(); });
   document.querySelectorAll('.city-trigger').forEach((button) => button.addEventListener('click', () => { state.cityPicker = state.cityPicker === button.dataset.picker ? '' : button.dataset.picker; state.cityFilter = ''; render(); if (state.cityPicker) setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); }));
@@ -177,7 +187,8 @@ function bindEvents() {
   document.onkeydown = (event) => {
     if (event.key === 'Escape' && state.cityPicker) { state.cityPicker = ''; state.cityFilter = ''; render(); }
   };
-  document.querySelector('#modify-search').addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
+  const modifySearch = document.querySelector('#modify-search');
+  if (modifySearch) modifySearch.addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
   document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); await refreshTracking(); render(); }));
   const refreshTrack = document.querySelector('#refresh-track');
   if (refreshTrack) refreshTrack.addEventListener('click', async () => { refreshTrack.textContent = 'Checking…'; await refreshTracking(); render(); });
@@ -205,8 +216,10 @@ function bindEvents() {
   document.querySelectorAll('.popular-select').forEach((button) => button.addEventListener('click', async () => {
     const bus = state.buses.find((item) => item.busNo === Number(button.dataset.bus));
     if (!bus) return;
+    const query = new URLSearchParams({ from: bus.src, to: bus.dest, date: state.travelDate || tomorrow, passengers: state.passengers || '1', bus: String(bus.busNo) });
+    if (!isBookingPage) { window.location.href = `/booking.html?${query.toString()}`; return; }
     state.searchFrom = bus.src; state.searchTo = bus.dest; state.travelDate ||= tomorrow; state.passengers ||= '1'; state.searchError = ''; state.selectedBusNo = bus.busNo; state.selectedSeat = null; state.searched = true;
-    await refreshAvailability(); await refreshTracking(); render(); document.querySelector('#results').scrollIntoView({ behavior: 'smooth' });
+    await refreshAvailability(); await refreshTracking(); render();
   }));
   const closePayment = document.querySelector('#close-payment');
   if (closePayment) closePayment.addEventListener('click', () => { state.paymentOpen = false; render(); });
