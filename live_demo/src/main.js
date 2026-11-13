@@ -83,7 +83,7 @@ const availableSeats = () => state.seats.filter((seat) => !seat.isBooked).length
 function renderCityPicker(field, label, value, cities) {
   const open = state.cityPicker === field;
   const matches = cities.filter((city) => city.toLowerCase().includes(state.cityFilter.toLowerCase()));
-  return `<div class="city-picker ${open ? 'open' : ''}" data-picker="${field}"><label>${label}</label><button type="button" class="city-trigger" data-picker="${field}"><strong>${escapeHtml(value)}</strong><small>${label === 'From' ? 'Departure city' : 'Arrival city'}</small><b>⌄</b></button>${open ? `<div class="city-popover"><input class="city-filter" placeholder="Search city…" value="${escapeHtml(state.cityFilter)}" autocomplete="off"><div class="city-options">${matches.length ? matches.map((city) => `<button type="button" data-city="${escapeHtml(city)}" data-field="${field}">${escapeHtml(city)}</button>`).join('') : '<span>No city found</span>'}</div></div>` : ''}</div>`;
+  return `<div class="city-picker ${open ? 'open' : ''}" data-picker="${field}"><label>${label}</label><button type="button" class="city-trigger" data-picker="${field}" aria-haspopup="listbox" aria-expanded="${open}"><strong>${escapeHtml(value)}</strong><small>${label === 'From' ? 'Departure city' : 'Arrival city'}</small><b>⌄</b></button>${open ? `<div class="city-popover"><div class="city-search-wrap"><span>⌕</span><input class="city-filter" placeholder="Search city" value="${escapeHtml(state.cityFilter)}" autocomplete="off" aria-label="Search ${label.toLowerCase()} city"></div><div class="city-options" role="listbox">${matches.length ? matches.map((city) => `<button type="button" role="option" aria-selected="${city === value}" class="${city === value ? 'selected' : ''}" data-city="${escapeHtml(city)}" data-field="${field}"><span>${escapeHtml(city)}</span>${city === value ? '<b>✓</b>' : ''}</button>`).join('') : '<span class="no-cities">No matching city</span>'}</div></div>` : ''}</div>`;
 }
 
 function renderService(bus) {
@@ -144,6 +144,7 @@ function render() {
 function bindEvents() {
   document.querySelector('#search-form').addEventListener('submit', async (event) => {
     event.preventDefault();
+    state.cityPicker = ''; state.cityFilter = '';
     state.travelDate = document.querySelector('#date').value;
     const services = matchingBuses();
     if (services.length) { state.selectedBusNo = services[0].busNo; state.selectedSeat = null; await refreshAvailability(); }
@@ -156,6 +157,12 @@ function bindEvents() {
   const cityFilter = document.querySelector('.city-filter');
   if (cityFilter) cityFilter.addEventListener('input', (event) => { state.cityFilter = event.target.value; render(); setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); });
   document.querySelectorAll('.city-options button').forEach((button) => button.addEventListener('click', () => { if (button.dataset.field === 'from') state.searchFrom = button.dataset.city; else state.searchTo = button.dataset.city; state.cityPicker = ''; state.cityFilter = ''; render(); }));
+  document.onclick = (event) => {
+    if (state.cityPicker && !event.target.closest('.city-picker')) { state.cityPicker = ''; state.cityFilter = ''; render(); }
+  };
+  document.onkeydown = (event) => {
+    if (event.key === 'Escape' && state.cityPicker) { state.cityPicker = ''; state.cityFilter = ''; render(); }
+  };
   document.querySelector('#modify-search').addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
   document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); await refreshTracking(); render(); }));
   const refreshTrack = document.querySelector('#refresh-track');
