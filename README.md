@@ -116,3 +116,18 @@ https://bus-reservation-api-uqnc.onrender.com/api/health
 `"databaseConnected": true` and `"persistence":"mysql"` confirm the live
 connection. Without those variables, the service deliberately falls back to
 the local booking file for preview mode.
+
+## Tomcat deployment
+
+The Render Docker image now runs **Apache Tomcat 9** as the public Java web
+server. Tomcat hosts the original coursework Servlet applications at:
+
+```text
+/task3/  - HTML and Servlet booking/cancellation forms
+/task4/  - JDBC Servlet booking portal
+```
+
+The production REST API remains available at `/api/*`. A Tomcat Servlet
+gateway forwards those requests to the in-container booking engine, so the
+Vercel frontend, live tracking, admin tools, and MySQL-backed booking flow
+continue to work at their existing URLs.

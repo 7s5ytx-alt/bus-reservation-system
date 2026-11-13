@@ -20,9 +20,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * - Connects to MySQL when BUS_DB_URL, BUS_DB_USER and BUS_DB_PASSWORD are configured
  */
 public class StandaloneBusServer {
-    // Render and other cloud hosts provide the public port through PORT.
-    // Local development continues to use port 8080.
-    private static final int PORT = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
+    // Tomcat uses the public PORT. When deployed behind Tomcat this server runs
+    // privately on INTERNAL_PORT and the Tomcat proxy servlet forwards /api/*.
+    private static final int PORT = Integer.parseInt(System.getenv().getOrDefault(
+        "INTERNAL_PORT", System.getenv().getOrDefault("PORT", "8080")
+    ));
 
     // Bus Model
     public static class Bus {
