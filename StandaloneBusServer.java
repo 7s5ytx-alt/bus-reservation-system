@@ -30,14 +30,32 @@ public class StandaloneBusServer {
         String source;
         String destination;
         int totalSeats;
+        String agencyName;
+        String driverName;
+        String serviceType;
+        String departureTime;
+        String arrivalTime;
+        String duration;
+        int fare;
         Map<Integer, BookingRecord> bookings = new ConcurrentHashMap<>();
 
         public Bus(int no, String name, String src, String dest, int seats) {
+            this(no, name, src, dest, seats, "Triply Partner", "Driver not assigned", "AC Sleeper", "21:00", "06:00", "9h 00m", 999);
+        }
+
+        public Bus(int no, String name, String src, String dest, int seats, String agency, String driver, String type, String departure, String arrival, String travelDuration, int fare) {
             this.busNumber = no;
             this.busName = name;
             this.source = src;
             this.destination = dest;
             this.totalSeats = seats;
+            this.agencyName = agency;
+            this.driverName = driver;
+            this.serviceType = type;
+            this.departureTime = departure;
+            this.arrivalTime = arrival;
+            this.duration = travelDuration;
+            this.fare = fare;
         }
     }
 
@@ -67,14 +85,14 @@ public class StandaloneBusServer {
 
     static {
         // Initialize default buses
-        busMap.put(101, new Bus(101, "Kaveri Express", "Bangalore", "Chennai", 24));
-        busMap.put(102, new Bus(102, "Royal Volvo", "Hyderabad", "Bangalore", 28));
-        busMap.put(103, new Bus(103, "Night Rider", "Mumbai", "Goa", 20));
-        busMap.put(104, new Bus(104, "Tamil Nadu Express", "Chennai", "Coimbatore", 32));
-        busMap.put(105, new Bus(105, "Deccan Sleeper", "Bangalore", "Hyderabad", 30));
-        busMap.put(106, new Bus(106, "Pink City Volvo", "Delhi", "Jaipur", 36));
-        busMap.put(107, new Bus(107, "Western Ghats Travels", "Pune", "Mumbai", 34));
-        busMap.put(108, new Bus(108, "Coastal Connect", "Vijayawada", "Hyderabad", 30));
+        busMap.put(101, new Bus(101, "Kaveri Express", "Bangalore", "Chennai", 24, "Kaveri Travels", "R. Kumar", "AC Sleeper", "21:30", "05:45", "8h 15m", 899));
+        busMap.put(102, new Bus(102, "Royal Volvo", "Hyderabad", "Bangalore", 28, "Royal Roadways", "S. Reddy", "Volvo Multi-Axle", "22:00", "06:30", "8h 30m", 1199));
+        busMap.put(103, new Bus(103, "Night Rider", "Mumbai", "Goa", 20, "Konkan Mobility", "A. Naik", "AC Sleeper", "20:45", "07:15", "10h 30m", 1049));
+        busMap.put(104, new Bus(104, "Tamil Nadu Express", "Chennai", "Coimbatore", 32, "Tamil Nadu Travels", "V. Prakash", "AC Seater Sleeper", "22:15", "06:30", "8h 15m", 749));
+        busMap.put(105, new Bus(105, "Deccan Sleeper", "Bangalore", "Hyderabad", 30, "Deccan Lines", "M. Irfan", "AC Sleeper", "21:00", "05:30", "8h 30m", 1099));
+        busMap.put(106, new Bus(106, "Pink City Volvo", "Delhi", "Jaipur", 36, "Rajasthan Transit", "P. Singh", "Volvo AC Seater", "06:15", "12:00", "5h 45m", 599));
+        busMap.put(107, new Bus(107, "Western Ghats Travels", "Pune", "Mumbai", 34, "Western Ghats", "N. Patil", "AC Seater", "07:30", "11:15", "3h 45m", 499));
+        busMap.put(108, new Bus(108, "Coastal Connect", "Vijayawada", "Hyderabad", 30, "Coastal Connect", "K. Rao", "AC Sleeper", "22:30", "04:45", "6h 15m", 699));
 
         // Load persisted bookings or set defaults
         loadPersistedBookings();
@@ -159,6 +177,7 @@ public class StandaloneBusServer {
         server.createContext("/api/seats", new ApiSeatsHandler());
         server.createContext("/api/book", new ApiBookHandler());
         server.createContext("/api/cancel", new ApiCancelHandler());
+        server.createContext("/api/admin/buses", new AdminBusesHandler());
 
         // Task 3 Endpoints
         server.createContext("/task3/", new StaticFileHandler("Task3_HTML_Servlet"));
@@ -190,7 +209,7 @@ public class StandaloneBusServer {
         Headers headers = exchange.getResponseHeaders();
         headers.set("Access-Control-Allow-Origin", "*");
         headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key");
     }
 
     private static void sendJson(HttpExchange exchange, int status, String json) throws IOException {
@@ -229,6 +248,20 @@ public class StandaloneBusServer {
                     .replace("\n", "\\n")
                     .replace("\r", "\\r")
                     .replace("\t", "\\t");
+    }
+
+    private static boolean isAdminRequest(HttpExchange exchange) {
+        String configuredKey = System.getenv("ADMIN_KEY");
+        return configuredKey != null && !configuredKey.isBlank()
+                && configuredKey.equals(exchange.getRequestHeaders().getFirst("X-Admin-Key"));
+    }
+
+    private static String busJson(Bus b) {
+        int booked = b.bookings.size();
+        return String.format(Locale.ROOT,
+                "{\"busNo\":%d,\"name\":\"%s\",\"src\":\"%s\",\"dest\":\"%s\",\"totalSeats\":%d,\"bookedSeats\":%d,\"availableSeats\":%d,\"agencyName\":\"%s\",\"driverName\":\"%s\",\"serviceType\":\"%s\",\"departure\":\"%s\",\"arrival\":\"%s\",\"duration\":\"%s\",\"fare\":%d}",
+                b.busNumber, escapeJson(b.busName), escapeJson(b.source), escapeJson(b.destination), b.totalSeats, booked, b.totalSeats - booked,
+                escapeJson(b.agencyName), escapeJson(b.driverName), escapeJson(b.serviceType), escapeJson(b.departureTime), escapeJson(b.arrivalTime), escapeJson(b.duration), b.fare);
     }
 
     private static Map<String, String> parseFormData(HttpExchange exchange) throws IOException {
@@ -295,13 +328,62 @@ public class StandaloneBusServer {
             for (Bus b : busMap.values()) {
                 if (!first) sb.append(",");
                 first = false;
-                int booked = b.bookings.size();
-                int avail = b.totalSeats - booked;
-                sb.append(String.format("{\"busNo\":%d,\"name\":\"%s\",\"src\":\"%s\",\"dest\":\"%s\",\"totalSeats\":%d,\"bookedSeats\":%d,\"availableSeats\":%d}",
-                        b.busNumber, b.busName, b.source, b.destination, b.totalSeats, booked, avail));
+                sb.append(busJson(b));
             }
             sb.append("]");
             sendJson(exchange, 200, sb.toString());
+        }
+    }
+
+    // GET and POST /api/admin/buses. The ADMIN_KEY environment variable must
+    // be configured on the hosting service before the admin portal can change data.
+    static class AdminBusesHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            addCorsHeaders(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) { exchange.sendResponseHeaders(204, -1); return; }
+            if (!isAdminRequest(exchange)) {
+                sendJson(exchange, 401, "{\"success\":false,\"message\":\"Admin access key is required\"}");
+                return;
+            }
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                StringBuilder output = new StringBuilder("[");
+                boolean first = true;
+                for (Bus bus : busMap.values()) { if (!first) output.append(","); first = false; output.append(busJson(bus)); }
+                sendJson(exchange, 200, output.append("]").toString());
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 405, "{\"success\":false,\"message\":\"Use GET or POST\"}");
+                return;
+            }
+            try {
+                Map<String, String> form = parseFormData(exchange);
+                int busNo = Integer.parseInt(form.getOrDefault("busNumber", "0"));
+                int seats = Integer.parseInt(form.getOrDefault("totalSeats", "0"));
+                int fare = Integer.parseInt(form.getOrDefault("fare", "0"));
+                String name = form.getOrDefault("busName", "").trim();
+                String source = form.getOrDefault("source", "").trim();
+                String destination = form.getOrDefault("destination", "").trim();
+                String agency = form.getOrDefault("agencyName", "").trim();
+                String driver = form.getOrDefault("driverName", "").trim();
+                String type = form.getOrDefault("serviceType", "AC Sleeper").trim();
+                String departure = form.getOrDefault("departure", "").trim();
+                String arrival = form.getOrDefault("arrival", "").trim();
+                String duration = form.getOrDefault("duration", "").trim();
+                if (busNo < 1 || seats < 1 || fare < 1 || name.isEmpty() || source.isEmpty() || destination.isEmpty() || agency.isEmpty() || driver.isEmpty() || departure.isEmpty() || arrival.isEmpty() || duration.isEmpty()) {
+                    sendJson(exchange, 400, "{\"success\":false,\"message\":\"Complete all required bus, route, schedule, agency, and driver fields\"}");
+                    return;
+                }
+                Bus created = new Bus(busNo, name, source, destination, seats, agency, driver, type, departure, arrival, duration, fare);
+                if (busMap.putIfAbsent(busNo, created) != null) {
+                    sendJson(exchange, 409, "{\"success\":false,\"message\":\"A bus with this number already exists\"}");
+                    return;
+                }
+                sendJson(exchange, 201, "{\"success\":true,\"message\":\"Bus service added\",\"bus\":" + busJson(created) + "}");
+            } catch (NumberFormatException e) {
+                sendJson(exchange, 400, "{\"success\":false,\"message\":\"Bus number, capacity, and fare must be valid numbers\"}");
+            }
         }
     }
 
