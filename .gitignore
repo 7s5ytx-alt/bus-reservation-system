@@ -19,3 +19,6 @@ bookings_store.txt
 *.iml
 Thumbs.db
 Desktop.ini
+
+.vercel
+.env*
