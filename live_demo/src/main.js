@@ -28,7 +28,12 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai'
+  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi'
+};
+const coupons = {
+  WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
+  TRIPLY100: { label: '₹100 off your ride', discount: () => 100 },
+  SAVE50: { label: '₹50 instant discount', discount: () => 50 }
 };
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const activeBus = () => state.buses.find((bus) => bus.busNo === state.selectedBusNo) ?? state.buses[0];
@@ -37,6 +42,8 @@ const matchingBuses = () => state.buses.filter((bus) =>
   && bus.dest.toLowerCase() === state.searchTo.trim().toLowerCase()
 );
 const fallbackSeats = (bus) => Array.from({ length: bus.totalSeats }, (_, index) => ({ seatNo: index + 1, isBooked: false, passenger: '' }));
+const discountFor = (fare) => coupons[state.coupon]?.discount(fare) ?? 0;
+const bookingTotal = (fare) => Math.max(0, fare - discountFor(fare));
 
 async function refreshAvailability() {
   const bus = activeBus();
@@ -81,12 +88,21 @@ function renderSeatMap() {
 
 function renderPanel() {
   const bus = activeBus(); const selected = state.seats.find((seat) => seat.seatNo === state.selectedSeat);
+  const fare = selected ? bus.fare : 0;
+  const discount = discountFor(fare);
   return `<div class="panel-heading"><div><p class="eyebrow">Choose your seat</p><h2>${escapeHtml(bus.name)}</h2></div><span>${escapeHtml(bus.type)}</span></div>
     <div class="legend"><i></i> Available <i class="key-selected"></i> Selected <i class="key-booked"></i> Booked</div>
     <div class="bus-shell"><div class="wheel">◔</div><div class="seat-grid">${renderSeatMap()}</div></div>
     <form id="checkout-form" class="checkout"><label for="passenger">Passenger details</label><input id="passenger" placeholder="Full name as on ID" maxlength="100" value="${escapeHtml(state.passengerName)}" required ${selected ? '' : 'disabled'}>
-      <div class="fare-row"><span>${selected ? `Seat ${selected.seatNo}` : 'Select a seat'}</span><strong>${selected ? money.format(bus.fare) : '—'}</strong></div>
-      <button type="submit" ${selected ? '' : 'disabled'}>Continue to payment <b>→</b></button><p id="booking-message">${state.connected ? 'Your selected seat is held while you complete booking.' : 'Start the Java server to make a live reservation.'}</p></form>`;
+      <div class="coupon-row"><input id="coupon" placeholder="Coupon code" value="${escapeHtml(state.coupon)}" ${selected ? '' : 'disabled'}><button type="button" id="apply-coupon" ${selected ? '' : 'disabled'}>Apply</button></div><p class="coupon-message ${state.couponMessage.startsWith('Applied') ? 'valid' : ''}">${escapeHtml(state.couponMessage || 'Try WELCOME10, TRIPLY100 or SAVE50')}</p>
+      <div class="price-lines"><div><span>${selected ? `Seat ${selected.seatNo}` : 'Select a seat'}</span><strong>${selected ? money.format(fare) : '—'}</strong></div>${discount ? `<div class="discount"><span>Coupon discount</span><strong>−${money.format(discount)}</strong></div>` : ''}<div class="total"><span>Total payable</span><strong>${selected ? money.format(bookingTotal(fare)) : '—'}</strong></div></div>
+      <button type="submit" ${selected ? '' : 'disabled'}>Review & pay <b>→</b></button><p id="booking-message">${state.connected ? 'Secure demo checkout · no real payment is collected.' : 'Preview mode · start the Java server for a live reservation.'}</p></form>`;
+}
+
+function renderPaymentModal() {
+  if (!state.paymentOpen) return '';
+  const bus = activeBus(); const total = bookingTotal(bus.fare);
+  return `<div class="modal-backdrop" role="presentation"><section class="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title"><button class="modal-close" id="close-payment" aria-label="Close checkout">×</button><div class="checkout-badge">Secure demo checkout</div><h2 id="payment-title">Almost there, ${escapeHtml(state.passengerName.split(' ')[0] || 'traveller')}.</h2><p class="modal-subtitle">This is a practice payment screen. No money will be charged.</p><div class="payment-trip"><span>${escapeHtml(bus.src)} <b>→</b> ${escapeHtml(bus.dest)}</span><small>${escapeHtml(bus.name)} · Seat ${state.selectedSeat} · ${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small></div><div class="payment-methods"><button class="payment-method ${state.paymentMethod === 'upi' ? 'selected' : ''}" data-method="upi"><b>UPI</b><span>Google Pay, PhonePe & more</span></button><button class="payment-method ${state.paymentMethod === 'card' ? 'selected' : ''}" data-method="card"><b>Card</b><span>Credit or debit card</span></button></div><div class="demo-payment"><span>${state.paymentMethod === 'upi' ? 'UPI ID' : 'Card number'}</span><strong>${state.paymentMethod === 'upi' ? 'traveller@triply' : '•••• 4242'}</strong><small>Demo details only</small></div><div class="payment-total"><span>Total payable</span><strong>${money.format(total)}</strong></div><button class="confirm-payment" id="confirm-payment">Pay ${money.format(total)} securely <b>→</b></button><p class="security-note">🔒 Demo mode — this creates a reservation only.</p></section></div>`;
 }
 
 function render() {
@@ -98,7 +114,7 @@ function render() {
   <main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>
   <form class="search-card" id="search-form"><div class="search-field"><label for="from">From</label><input id="from" list="cities" value="${escapeHtml(state.searchFrom)}"><small>Departure city</small></div><button class="swap" type="button" aria-label="Swap route">⇄</button><div class="search-field"><label for="to">To</label><input id="to" list="cities" value="${escapeHtml(state.searchTo)}"><small>Arrival city</small></div><datalist id="cities">${cityOptions}</datalist><div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span></div></section>
   <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><button id="modify-search">Modify search</button></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try one of the listed city pairs or change your journey date.</span></div>`}</section>
-  <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>`;
+  <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
   bindEvents();
 }
 
@@ -121,17 +137,36 @@ function bindEvents() {
   const passenger = document.querySelector('#passenger');
   const checkout = document.querySelector('#checkout-form');
   if (passenger) passenger.addEventListener('input', (event) => { state.passengerName = event.target.value; });
-  if (checkout) checkout.addEventListener('submit', bookSeat);
+  if (checkout) checkout.addEventListener('submit', (event) => {
+    event.preventDefault();
+    state.passengerName = passenger.value.trim();
+    if (!state.passengerName || !state.selectedSeat) return;
+    state.paymentOpen = true;
+    render();
+  });
+  const applyCoupon = document.querySelector('#apply-coupon');
+  if (applyCoupon) applyCoupon.addEventListener('click', () => {
+    const code = document.querySelector('#coupon').value.trim().toUpperCase();
+    state.coupon = coupons[code] ? code : '';
+    state.couponMessage = coupons[code] ? `Applied ${code}: ${coupons[code].label}.` : (code ? 'That coupon is not available. Try WELCOME10.' : 'Enter a coupon code to apply it.');
+    render();
+  });
+  const closePayment = document.querySelector('#close-payment');
+  if (closePayment) closePayment.addEventListener('click', () => { state.paymentOpen = false; render(); });
+  document.querySelectorAll('.payment-method').forEach((button) => button.addEventListener('click', () => { state.paymentMethod = button.dataset.method; render(); }));
+  const confirmPayment = document.querySelector('#confirm-payment');
+  if (confirmPayment) confirmPayment.addEventListener('click', bookSeat);
 }
 
 async function bookSeat(event) {
-  event.preventDefault(); const form = event.currentTarget; const message = document.querySelector('#booking-message'); const name = form.querySelector('#passenger').value.trim(); state.passengerName = name; if (!name || !state.selectedSeat) return;
-  const button = form.querySelector('button'); button.disabled = true; button.textContent = 'Confirming your seat…';
+  event.preventDefault(); const message = document.querySelector('#booking-message'); const name = state.passengerName.trim(); if (!name || !state.selectedSeat) return;
+  const button = event.currentTarget; button.disabled = true; button.textContent = 'Reserving your seat…';
   try {
     const response = await fetch(`${API_BASE}/book`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ busNumber: state.selectedBusNo, seatNumber: state.selectedSeat, passengerName: name }) });
     const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.message || 'Booking could not be completed.');
-    message.className = 'success'; message.textContent = `Confirmed! Booking #${data.bookingId} · Seat ${data.seatNo} is reserved for ${name}.`; state.passengerName = ''; state.selectedSeat = null; await refreshAvailability(); setTimeout(render, 1100);
-  } catch (error) { message.className = 'error'; message.textContent = error.message || 'Unable to reach the booking server.'; button.disabled = false; button.innerHTML = 'Continue to payment <b>→</b>'; }
+    state.paymentOpen = false; state.coupon = ''; state.couponMessage = ''; state.passengerName = ''; state.selectedSeat = null; await refreshAvailability(); render();
+    const liveMessage = document.querySelector('#booking-message'); liveMessage.className = 'success'; liveMessage.textContent = `Confirmed! Booking #${data.bookingId} · Seat ${data.seatNo} is reserved for ${name}.`;
+  } catch (error) { state.paymentOpen = false; render(); const liveMessage = document.querySelector('#booking-message'); liveMessage.className = 'error'; liveMessage.textContent = error.message || 'Unable to reach the booking server.'; }
 }
 
 await loadBuses();
