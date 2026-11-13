@@ -70,6 +70,11 @@ public class StandaloneBusServer {
         busMap.put(101, new Bus(101, "Kaveri Express", "Bangalore", "Chennai", 24));
         busMap.put(102, new Bus(102, "Royal Volvo", "Hyderabad", "Bangalore", 28));
         busMap.put(103, new Bus(103, "Night Rider", "Mumbai", "Goa", 20));
+        busMap.put(104, new Bus(104, "Tamil Nadu Express", "Chennai", "Coimbatore", 32));
+        busMap.put(105, new Bus(105, "Deccan Sleeper", "Bangalore", "Hyderabad", 30));
+        busMap.put(106, new Bus(106, "Pink City Volvo", "Delhi", "Jaipur", 36));
+        busMap.put(107, new Bus(107, "Western Ghats Travels", "Pune", "Mumbai", 34));
+        busMap.put(108, new Bus(108, "Coastal Connect", "Vijayawada", "Hyderabad", 30));
 
         // Load persisted bookings or set defaults
         loadPersistedBookings();

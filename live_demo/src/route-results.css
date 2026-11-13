@@ -1,0 +1,16 @@
+.empty-results {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 9px;
+  background: #fff;
+  border: 1px dashed #b7c8b9;
+  border-radius: 15px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-results strong { font-size: 17px; color: var(--ink); }
+.empty-results span { font-size: 13px; }

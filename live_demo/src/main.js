@@ -1,4 +1,5 @@
 import './style.css';
+import './route-results.css';
 
 // VITE_API_BASE can override this value for staging or another API host.
 // Development uses the local Java server; the published site uses Render.
@@ -7,15 +8,34 @@ const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.DEV
   : 'https://bus-reservation-api-uqnc.onrender.com/api');
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+const tripDetails = {
+  101: { departure: '21:30', arrival: '05:45', duration: '8h 15m', fare: 899, type: 'AC Sleeper', rating: '4.6' },
+  102: { departure: '22:00', arrival: '06:30', duration: '8h 30m', fare: 1199, type: 'Volvo Multi-Axle', rating: '4.7' },
+  103: { departure: '20:45', arrival: '07:15', duration: '10h 30m', fare: 1049, type: 'AC Sleeper', rating: '4.5' },
+  104: { departure: '22:15', arrival: '06:30', duration: '8h 15m', fare: 749, type: 'AC Seater Sleeper', rating: '4.4' },
+  105: { departure: '21:00', arrival: '05:30', duration: '8h 30m', fare: 1099, type: 'AC Sleeper', rating: '4.6' },
+  106: { departure: '06:15', arrival: '12:00', duration: '5h 45m', fare: 599, type: 'Volvo AC Seater', rating: '4.7' },
+  107: { departure: '07:30', arrival: '11:15', duration: '3h 45m', fare: 499, type: 'AC Seater', rating: '4.5' },
+  108: { departure: '22:30', arrival: '04:45', duration: '6h 15m', fare: 699, type: 'AC Sleeper', rating: '4.4' }
+};
 const state = {
   buses: [
-    { busNo: 101, name: 'Kaveri Express', src: 'Bangalore', dest: 'Chennai', totalSeats: 24, departure: '21:30', arrival: '05:45', duration: '8h 15m', fare: 899, type: 'AC Sleeper' },
-    { busNo: 102, name: 'Royal Volvo', src: 'Hyderabad', dest: 'Bangalore', totalSeats: 28, departure: '22:00', arrival: '06:30', duration: '8h 30m', fare: 1199, type: 'Volvo Multi-Axle' },
-    { busNo: 103, name: 'Night Rider', src: 'Mumbai', dest: 'Goa', totalSeats: 20, departure: '20:45', arrival: '07:15', duration: '10h 30m', fare: 1049, type: 'AC Sleeper' }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null
+    { busNo: 101, name: 'Kaveri Express', src: 'Bangalore', dest: 'Chennai', totalSeats: 24, ...tripDetails[101] },
+    { busNo: 102, name: 'Royal Volvo', src: 'Hyderabad', dest: 'Bangalore', totalSeats: 28, ...tripDetails[102] },
+    { busNo: 103, name: 'Night Rider', src: 'Mumbai', dest: 'Goa', totalSeats: 20, ...tripDetails[103] },
+    { busNo: 104, name: 'Tamil Nadu Express', src: 'Chennai', dest: 'Coimbatore', totalSeats: 32, ...tripDetails[104] },
+    { busNo: 105, name: 'Deccan Sleeper', src: 'Bangalore', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[105] },
+    { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
+    { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
+    { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
+  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai'
 };
 const escapeHtml = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const activeBus = () => state.buses.find((bus) => bus.busNo === state.selectedBusNo) ?? state.buses[0];
+const matchingBuses = () => state.buses.filter((bus) =>
+  bus.src.toLowerCase() === state.searchFrom.trim().toLowerCase()
+  && bus.dest.toLowerCase() === state.searchTo.trim().toLowerCase()
+);
 const fallbackSeats = (bus) => Array.from({ length: bus.totalSeats }, (_, index) => ({ seatNo: index + 1, isBooked: false, passenger: '' }));
 
 async function refreshAvailability() {
@@ -36,8 +56,7 @@ async function loadBuses() {
   try {
     const response = await fetch(`${API_BASE}/buses`);
     if (!response.ok) throw new Error();
-    const details = [['21:30', '05:45', '8h 15m', 899, 'AC Sleeper'], ['22:00', '06:30', '8h 30m', 1199, 'Volvo Multi-Axle'], ['20:45', '07:15', '10h 30m', 1049, 'AC Sleeper']];
-    state.buses = (await response.json()).map((bus, index) => ({ ...bus, departure: details[index]?.[0] ?? '21:00', arrival: details[index]?.[1] ?? '06:00', duration: details[index]?.[2] ?? '8h', fare: details[index]?.[3] ?? 999, type: details[index]?.[4] ?? 'AC Sleeper' }));
+    state.buses = (await response.json()).map((bus) => ({ ...bus, ...(tripDetails[bus.busNo] ?? { departure: '21:00', arrival: '06:00', duration: '8h', fare: 999, type: 'AC Sleeper', rating: '4.3' }) }));
   } catch { /* Preview mode uses local sample data. */ }
   await refreshAvailability();
 }
@@ -48,7 +67,7 @@ function renderService(bus) {
   const chosen = bus.busNo === state.selectedBusNo;
   const available = chosen ? availableSeats() : (bus.availableSeats ?? bus.totalSeats);
   return `<article class="service-card ${chosen ? 'selected' : ''}" data-bus="${bus.busNo}">
-    <div class="service-main"><div class="operator"><div class="operator-logo">${escapeHtml(bus.name[0])}</div><div><h3>${escapeHtml(bus.name)}</h3><p>${escapeHtml(bus.type)} · 4.7 <b>★</b></p></div></div>
+    <div class="service-main"><div class="operator"><div class="operator-logo">${escapeHtml(bus.name[0])}</div><div><h3>${escapeHtml(bus.name)}</h3><p>${escapeHtml(bus.type)} · ${bus.rating} <b>★</b></p></div></div>
       <div class="time"><strong>${bus.departure}</strong><span>${escapeHtml(bus.src)}</span></div><div class="journey"><i></i><small>${bus.duration}</small></div><div class="time"><strong>${bus.arrival}</strong><span>${escapeHtml(bus.dest)}</span></div></div>
     <div class="service-side"><span>${available} seats left</span><strong>${money.format(bus.fare)}</strong><small>per passenger</small><button type="button">${chosen ? 'Selected' : 'Select seats'}</button></div></article>`;
 }
@@ -72,22 +91,37 @@ function renderPanel() {
 
 function render() {
   const bus = activeBus();
+  const services = matchingBuses();
+  const cities = [...new Set(state.buses.flatMap((service) => [service.src, service.dest]))].sort();
+  const cityOptions = cities.map((city) => `<option value="${escapeHtml(city)}"></option>`).join('');
   document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="#top"><b>T</b>triply</a><nav><a class="active" href="#search">Bus tickets</a><a href="#how-it-works">How it works</a><a href="#support">Help</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? `Live updates on${state.lastSyncedAt ? ` · synced ${state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Preview mode'}</div></header>
   <main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>
-  <form class="search-card" id="search-form"><div class="search-field"><label for="from">From</label><input id="from" value="${escapeHtml(bus.src)}"><small>Departure city</small></div><button class="swap" type="button" aria-label="Swap route">⇄</button><div class="search-field"><label for="to">To</label><input id="to" value="${escapeHtml(bus.dest)}"><small>Arrival city</small></div><div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span></div></section>
-  <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(bus.src)} <b>→</b> ${escapeHtml(bus.dest)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${state.buses.length} services found</p></div><button id="modify-search">Modify search</button></div><div class="journey-layout"><div class="service-list">${state.buses.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div></section>
+  <form class="search-card" id="search-form"><div class="search-field"><label for="from">From</label><input id="from" list="cities" value="${escapeHtml(state.searchFrom)}"><small>Departure city</small></div><button class="swap" type="button" aria-label="Swap route">⇄</button><div class="search-field"><label for="to">To</label><input id="to" list="cities" value="${escapeHtml(state.searchTo)}"><small>Arrival city</small></div><datalist id="cities">${cityOptions}</datalist><div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span></div></section>
+  <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><button id="modify-search">Modify search</button></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try one of the listed city pairs or change your journey date.</span></div>`}</section>
   <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>`;
   bindEvents();
 }
 
 function bindEvents() {
-  document.querySelector('#search-form').addEventListener('submit', async (event) => { event.preventDefault(); state.travelDate = document.querySelector('#date').value; state.searched = true; await refreshAvailability(); render(); document.querySelector('#results').scrollIntoView({ behavior: 'smooth' }); });
+  document.querySelector('#search-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    state.searchFrom = document.querySelector('#from').value.trim();
+    state.searchTo = document.querySelector('#to').value.trim();
+    state.travelDate = document.querySelector('#date').value;
+    const services = matchingBuses();
+    if (services.length) { state.selectedBusNo = services[0].busNo; state.selectedSeat = null; await refreshAvailability(); }
+    state.searched = true;
+    render();
+    document.querySelector('#results').scrollIntoView({ behavior: 'smooth' });
+  });
   document.querySelector('.swap').addEventListener('click', () => { const from = document.querySelector('#from'); const to = document.querySelector('#to'); [from.value, to.value] = [to.value, from.value]; });
   document.querySelector('#modify-search').addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
   document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); render(); }));
   document.querySelectorAll('.seat:not(.booked)').forEach((seat) => seat.addEventListener('click', () => { state.selectedSeat = Number(seat.dataset.seat); render(); }));
-  document.querySelector('#passenger').addEventListener('input', (event) => { state.passengerName = event.target.value; });
-  document.querySelector('#checkout-form').addEventListener('submit', bookSeat);
+  const passenger = document.querySelector('#passenger');
+  const checkout = document.querySelector('#checkout-form');
+  if (passenger) passenger.addEventListener('input', (event) => { state.passengerName = event.target.value; });
+  if (checkout) checkout.addEventListener('submit', bookSeat);
 }
 
 async function bookSeat(event) {
