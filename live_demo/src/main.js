@@ -28,7 +28,7 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
+  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: '', passengers: '', passengerName: '', lastSyncedAt: null, searchFrom: '', searchTo: '', searchError: '', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
 };
 const coupons = {
   WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
@@ -84,7 +84,7 @@ const availableFor = (bus) => bus.busNo === state.selectedBusNo ? availableSeats
 function renderCityPicker(field, label, value, cities) {
   const open = state.cityPicker === field;
   const matches = cities.filter((city) => city.toLowerCase().includes(state.cityFilter.toLowerCase()));
-  return `<div class="city-picker ${open ? 'open' : ''}" data-picker="${field}"><label>${label}</label><button type="button" class="city-trigger" data-picker="${field}" aria-haspopup="listbox" aria-expanded="${open}"><strong>${escapeHtml(value)}</strong><small>${label === 'From' ? 'Departure city' : 'Arrival city'}</small><b>⌄</b></button>${open ? `<div class="city-popover"><div class="city-search-wrap"><span>⌕</span><input class="city-filter" placeholder="Search city" value="${escapeHtml(state.cityFilter)}" autocomplete="off" aria-label="Search ${label.toLowerCase()} city"></div><div class="city-options" role="listbox">${matches.length ? matches.map((city) => `<button type="button" role="option" aria-selected="${city === value}" class="${city === value ? 'selected' : ''}" data-city="${escapeHtml(city)}" data-field="${field}"><span>${escapeHtml(city)}</span>${city === value ? '<b>✓</b>' : ''}</button>`).join('') : '<span class="no-cities">No matching city</span>'}</div></div>` : ''}</div>`;
+  return `<div class="city-picker ${open ? 'open' : ''} ${value ? '' : 'empty'}" data-picker="${field}"><label>${label}</label><button type="button" class="city-trigger" data-picker="${field}" aria-haspopup="listbox" aria-expanded="${open}"><strong>${escapeHtml(value || `Select ${label.toLowerCase()} city`)}</strong><small>${label === 'From' ? 'Departure city' : 'Arrival city'}</small><b>⌄</b></button>${open ? `<div class="city-popover"><div class="city-search-wrap"><span>⌕</span><input class="city-filter" placeholder="Search city" value="${escapeHtml(state.cityFilter)}" autocomplete="off" aria-label="Search ${label.toLowerCase()} city"></div><div class="city-options" role="listbox">${matches.length ? matches.map((city) => `<button type="button" role="option" aria-selected="${city === value}" class="${city === value ? 'selected' : ''}" data-city="${escapeHtml(city)}" data-field="${field}"><span>${escapeHtml(city)}</span>${city === value ? '<b>✓</b>' : ''}</button>`).join('') : '<span class="no-cities">No matching city</span>'}</div></div>` : ''}</div>`;
 }
 
 function renderService(bus) {
@@ -141,7 +141,7 @@ function render() {
   const cityOptions = cities.map((city) => `<option value="${escapeHtml(city)}"></option>`).join('');
   document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="#top"><b>T</b>triply</a><nav><a class="active" href="#search">Bus tickets</a><a href="#how-it-works">How it works</a><a href="/driver.html">Driver portal</a><a href="/admin.html">Agency portal</a><a href="#support">Help</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? `Live updates on${state.lastSyncedAt ? ` · synced ${state.lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Preview mode'}</div></header>
   <main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>
-  <form class="search-card" id="search-form">${renderCityPicker('from', 'From', state.searchFrom, cities)}<button class="swap" type="button" aria-label="Swap route">⇄</button>${renderCityPicker('to', 'To', state.searchTo, cities)}<div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option>1 passenger</option><option>2 passengers</option><option>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form><div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section>
+  <form class="search-card" id="search-form">${renderCityPicker('from', 'From', state.searchFrom, cities)}<button class="swap" type="button" aria-label="Swap route">⇄</button>${renderCityPicker('to', 'To', state.searchTo, cities)}<div class="search-field"><label for="date">Travel date</label><input id="date" type="date" min="${tomorrow}" value="${state.travelDate}"></div><div class="search-field"><label for="travellers">Passengers</label><select id="travellers"><option value="" ${state.passengers ? '' : 'selected'} disabled>Select passengers</option><option value="1" ${state.passengers === '1' ? 'selected' : ''}>1 passenger</option><option value="2" ${state.passengers === '2' ? 'selected' : ''}>2 passengers</option><option value="3" ${state.passengers === '3' ? 'selected' : ''}>3 passengers</option></select></div><button class="search-button">Find buses <b>→</b></button></form>${state.searchError ? `<p class="search-error" role="alert">${escapeHtml(state.searchError)}</p>` : ''}<div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section>
   <section class="popular-section" aria-labelledby="popular-title"><div class="popular-heading"><div><p class="eyebrow">Popular this week</p><h2 id="popular-title">Buses travellers are booking now.</h2></div><span><i class="live-dot"></i> Live seat availability</span></div><div class="popular-grid">${state.buses.slice(0, 4).map(renderPopularBus).join('')}</div></section>
   <section class="results ${state.searched ? 'visible' : ''}" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><button id="modify-search">Modify search</button></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try one of the listed city pairs or change your journey date.</span></div>`}</section>
   <section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main><footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
@@ -152,6 +152,13 @@ function bindEvents() {
   document.querySelector('#search-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     state.cityPicker = ''; state.cityFilter = '';
+    state.passengers = document.querySelector('#travellers').value;
+    if (!state.searchFrom || !state.searchTo || !state.travelDate || !state.passengers) {
+      state.searchError = 'Select your cities, travel date, and passenger count to find buses.';
+      render();
+      return;
+    }
+    state.searchError = '';
     state.travelDate = document.querySelector('#date').value;
     const services = matchingBuses();
     if (services.length) { state.selectedBusNo = services[0].busNo; state.selectedSeat = null; await refreshAvailability(); }
@@ -163,7 +170,7 @@ function bindEvents() {
   document.querySelectorAll('.city-trigger').forEach((button) => button.addEventListener('click', () => { state.cityPicker = state.cityPicker === button.dataset.picker ? '' : button.dataset.picker; state.cityFilter = ''; render(); if (state.cityPicker) setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); }));
   const cityFilter = document.querySelector('.city-filter');
   if (cityFilter) cityFilter.addEventListener('input', (event) => { state.cityFilter = event.target.value; render(); setTimeout(() => document.querySelector('.city-filter')?.focus(), 0); });
-  document.querySelectorAll('.city-options button').forEach((button) => button.addEventListener('click', () => { if (button.dataset.field === 'from') state.searchFrom = button.dataset.city; else state.searchTo = button.dataset.city; state.cityPicker = ''; state.cityFilter = ''; render(); }));
+  document.querySelectorAll('.city-options button').forEach((button) => button.addEventListener('click', () => { if (button.dataset.field === 'from') state.searchFrom = button.dataset.city; else state.searchTo = button.dataset.city; state.searchError = ''; state.cityPicker = ''; state.cityFilter = ''; render(); }));
   document.onclick = (event) => {
     if (state.cityPicker && !event.target.closest('.city-picker')) { state.cityPicker = ''; state.cityFilter = ''; render(); }
   };
@@ -198,7 +205,7 @@ function bindEvents() {
   document.querySelectorAll('.popular-select').forEach((button) => button.addEventListener('click', async () => {
     const bus = state.buses.find((item) => item.busNo === Number(button.dataset.bus));
     if (!bus) return;
-    state.searchFrom = bus.src; state.searchTo = bus.dest; state.selectedBusNo = bus.busNo; state.selectedSeat = null; state.searched = true;
+    state.searchFrom = bus.src; state.searchTo = bus.dest; state.travelDate ||= tomorrow; state.passengers ||= '1'; state.searchError = ''; state.selectedBusNo = bus.busNo; state.selectedSeat = null; state.searched = true;
     await refreshAvailability(); await refreshTracking(); render(); document.querySelector('#results').scrollIntoView({ behavior: 'smooth' });
   }));
   const closePayment = document.querySelector('#close-payment');
