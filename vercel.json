@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "installCommand": "npm --prefix live_demo install",
-  "buildCommand": "npm --prefix live_demo run build",
-  "outputDirectory": "live_demo/dist"
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist"
 }
