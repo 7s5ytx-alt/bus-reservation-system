@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Bus Seat - Task 3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 32px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .desc {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 14px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #0f172a;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #0f172a;
+        }
+        .btn {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            margin-top: 8px;
+            background: #0f172a;
+            color: #ffffff;
+            transition: all 0.15s ease;
+        }
+        .btn:hover {
+            background: #1e293b;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 16px;
+            font-size: 12px;
+            color: #64748b;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            color: #0f172a;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Book Passenger Seat</h2>
+        <div class="desc">Submits POST request to BookingServlet</div>
+
+        <form action="BookingServlet" method="POST">
+            <div class="form-group">
+                <label for="busNumber">Bus Number</label>
+                <select id="busNumber" name="busNumber" required>
+                    <option value="101">Bus 101 - Bangalore to Chennai</option>
+                    <option value="102">Bus 102 - Hyderabad to Bangalore</option>
+                    <option value="103">Bus 103 - Mumbai to Goa</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="passengerName">Passenger Name</label>
+                <input type="text" id="passengerName" name="passengerName" placeholder="Full name" required>
+            </div>
+            <div class="form-group">
+                <label for="seatNumber">Seat Number</label>
+                <input type="number" id="seatNumber" name="seatNumber" min="1" max="30" placeholder="1 - 30" required>
+            </div>
+            <button type="submit" class="btn">Confirm Booking</button>
+        </form>
+        <a href="index.html" class="back-link">&larr; Back to Portal</a>
+    </div>
+</body>
+</html>

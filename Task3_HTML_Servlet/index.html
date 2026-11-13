@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Reservation System - Task 3</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 32px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            margin-bottom: 6px;
+        }
+        p {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .btn {
+            display: block;
+            text-align: center;
+            padding: 10px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+        .btn-primary {
+            background: #0f172a;
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background: #1e293b;
+        }
+        .btn-secondary {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            color: #0f172a;
+        }
+        .btn-secondary:hover {
+            background: #f1f5f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Bus Reservation Portal</h1>
+        <p>Task 3: Client HTML Forms &amp; Java Servlets</p>
+        <div class="btn-group">
+            <a href="booking.html" class="btn btn-primary">Book Passenger Seat</a>
+            <a href="cancellation.html" class="btn btn-secondary">Cancel Seat Booking</a>
+        </div>
+    </div>
+</body>
+</html>
