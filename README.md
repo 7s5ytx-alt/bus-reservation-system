@@ -87,3 +87,32 @@ d:/New folder/New folder/
    ```
    http://localhost:8080/Task4_JDBC_Servlet/index.html
    ```
+
+---
+
+## Render MySQL Connection
+
+The deployed REST server uses MySQL as its booking source of truth when all
+three environment variables are configured. Add the following values in the
+Render service environment settings, then deploy:
+
+```text
+BUS_DB_URL=jdbc:mysql://HOST:3306/bus_reservation_db?useSSL=true&serverTimezone=UTC
+BUS_DB_USER=your_database_user
+BUS_DB_PASSWORD=your_database_password
+```
+
+Run `Task2_MySQL/bus_reservation.sql` once against the database before the
+first deployment. The server upserts its configured buses, reads confirmed
+bookings on startup, writes new bookings to MySQL, and marks cancellations as
+`CANCELLED`.
+
+After deployment, open:
+
+```text
+https://bus-reservation-api-uqnc.onrender.com/api/health
+```
+
+`"databaseConnected": true` and `"persistence":"mysql"` confirm the live
+connection. Without those variables, the service deliberately falls back to
+the local booking file for preview mode.

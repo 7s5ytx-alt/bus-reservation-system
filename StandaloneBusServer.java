@@ -9,6 +9,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * High-Performance Standalone Java Server for Bus Reservation System
  * - Supports Traditional Servlets (Tasks 3 & 4)
  * - Supports Live Real-Time REST API (GET /api/seats, POST /api/book, POST /api/cancel)
- * - Connects to MySQL if available, with auto persistent file fallback
+ * - Connects to MySQL when BUS_DB_URL, BUS_DB_USER and BUS_DB_PASSWORD are configured
  */
 public class StandaloneBusServer {
     // Render and other cloud hosts provide the public port through PORT.
@@ -84,6 +85,11 @@ public class StandaloneBusServer {
     private static final Map<Integer, Bus> busMap = new ConcurrentHashMap<>();
     private static final Map<String, Integer> driverSessions = new ConcurrentHashMap<>();
     private static int nextId = 100;
+    private static final boolean DATABASE_CONFIGURED =
+            !System.getenv().getOrDefault("BUS_DB_URL", "").isBlank()
+            && !System.getenv().getOrDefault("BUS_DB_USER", "").isBlank()
+            && !System.getenv().getOrDefault("BUS_DB_PASSWORD", "").isBlank();
+    private static volatile boolean databaseConnected = false;
     // Local development can override this path; cloud hosts use the working
     // directory. For durable cloud reservations, use the JDBC database module.
     private static final File PERSISTENCE_FILE = new File(System.getenv().getOrDefault("BOOKINGS_FILE", "bookings_store.txt"));
@@ -99,8 +105,127 @@ public class StandaloneBusServer {
         busMap.put(107, new Bus(107, "Western Ghats Travels", "Pune", "Mumbai", 34, "Western Ghats", "N. Patil", "AC Seater", "07:30", "11:15", "3h 45m", 499));
         busMap.put(108, new Bus(108, "Coastal Connect", "Vijayawada", "Hyderabad", 30, "Coastal Connect", "K. Rao", "AC Sleeper", "22:30", "04:45", "6h 15m", 699));
 
-        // Load persisted bookings or set defaults
-        loadPersistedBookings();
+        // MySQL is the live source of truth when all database values are configured.
+        // File persistence remains available for local preview without a database.
+        if (DATABASE_CONFIGURED) {
+            databaseConnected = initializeDatabase();
+        }
+        if (!databaseConnected) {
+            loadPersistedBookings();
+            System.out.println("[PERSISTENCE] File mode active. Configure BUS_DB_URL, BUS_DB_USER, and BUS_DB_PASSWORD for MySQL.");
+        }
+    }
+
+    private static Connection databaseConnection() throws SQLException {
+        return DriverManager.getConnection(
+                System.getenv("BUS_DB_URL"),
+                System.getenv("BUS_DB_USER"),
+                System.getenv("BUS_DB_PASSWORD")
+        );
+    }
+
+    private static boolean initializeDatabase() {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+            try (Connection connection = databaseConnection()) {
+                ensureDatabaseBuses(connection);
+                loadDatabaseBookings(connection);
+            }
+            System.out.println("[DATABASE] MySQL connected. Live bookings are stored in bus_reservation_db.");
+            return true;
+        } catch (Exception exception) {
+            System.err.println("[DATABASE] MySQL configuration was supplied but the connection failed: " + exception.getMessage());
+            return false;
+        }
+    }
+
+    private static void ensureDatabaseBuses(Connection connection) throws SQLException {
+        String sql = "INSERT INTO bus (bus_no, bus_name, source, destination, total_seats) VALUES (?, ?, ?, ?, ?) "
+                + "ON DUPLICATE KEY UPDATE bus_name=VALUES(bus_name), source=VALUES(source), "
+                + "destination=VALUES(destination), total_seats=VALUES(total_seats)";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (Bus bus : busMap.values()) {
+                statement.setInt(1, bus.busNumber);
+                statement.setString(2, bus.busName);
+                statement.setString(3, bus.source);
+                statement.setString(4, bus.destination);
+                statement.setInt(5, bus.totalSeats);
+                statement.addBatch();
+            }
+            statement.executeBatch();
+        }
+    }
+
+    private static void loadDatabaseBookings(Connection connection) throws SQLException {
+        for (Bus bus : busMap.values()) bus.bookings.clear();
+        String sql = "SELECT booking_id, bus_no, passenger_name, seat_no, booking_date, status "
+                + "FROM booking WHERE status = 'CONFIRMED' ORDER BY booking_id";
+        try (PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet results = statement.executeQuery()) {
+            while (results.next()) {
+                int bookingId = results.getInt("booking_id");
+                int busNo = results.getInt("bus_no");
+                Bus bus = busMap.get(busNo);
+                if (bus != null) {
+                    bus.bookings.put(results.getInt("seat_no"), new BookingRecord(
+                            bookingId, busNo, results.getString("passenger_name"),
+                            results.getInt("seat_no"), String.valueOf(results.getTimestamp("booking_date")),
+                            results.getString("status")));
+                    if (bookingId >= nextId) nextId = bookingId + 1;
+                }
+            }
+        }
+    }
+
+    private static synchronized BookingRecord createBooking(int busNo, String passenger, int seatNo) throws SQLException {
+        Bus bus = busMap.get(busNo);
+        if (bus == null || seatNo < 1 || seatNo > bus.totalSeats || passenger.isBlank()) return null;
+
+        if (!databaseConnected) {
+            if (bus.bookings.containsKey(seatNo)) return null;
+            BookingRecord record = new BookingRecord(nextId++, busNo, passenger, seatNo, new Date().toString(), "CONFIRMED");
+            bus.bookings.put(seatNo, record);
+            savePersistedBookings();
+            return record;
+        }
+
+        String sql = "INSERT INTO booking (bus_no, passenger_name, seat_no, status) VALUES (?, ?, ?, 'CONFIRMED')";
+        try (Connection connection = databaseConnection();
+             PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            statement.setInt(1, busNo);
+            statement.setString(2, passenger);
+            statement.setInt(3, seatNo);
+            statement.executeUpdate();
+            int bookingId = nextId++;
+            try (ResultSet keys = statement.getGeneratedKeys()) {
+                if (keys.next()) bookingId = keys.getInt(1);
+            }
+            BookingRecord record = new BookingRecord(bookingId, busNo, passenger, seatNo, new Date().toString(), "CONFIRMED");
+            bus.bookings.put(seatNo, record);
+            return record;
+        } catch (SQLException exception) {
+            if ("23000".equals(exception.getSQLState())) return null;
+            throw exception;
+        }
+    }
+
+    private static synchronized boolean cancelBooking(int busNo, int seatNo) throws SQLException {
+        Bus bus = busMap.get(busNo);
+        if (bus == null) return false;
+        if (!databaseConnected) {
+            if (bus.bookings.remove(seatNo) == null) return false;
+            savePersistedBookings();
+            return true;
+        }
+        try (Connection connection = databaseConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "UPDATE booking SET status = 'CANCELLED' WHERE bus_no = ? AND seat_no = ? AND status = 'CONFIRMED'")) {
+            statement.setInt(1, busNo);
+            statement.setInt(2, seatNo);
+            if (statement.executeUpdate() == 0) return false;
+            bus.bookings.remove(seatNo);
+            return true;
+        }
     }
 
     private static synchronized void savePersistedBookings() {
@@ -186,6 +311,7 @@ public class StandaloneBusServer {
         server.createContext("/api/track", new ApiTrackHandler());
         server.createContext("/api/driver/login", new DriverLoginHandler());
         server.createContext("/api/driver/location", new DriverLocationHandler());
+        server.createContext("/api/health", new ApiHealthHandler());
 
         // Task 3 Endpoints
         server.createContext("/task3/", new StaticFileHandler("Task3_HTML_Servlet"));
@@ -519,16 +645,17 @@ public class StandaloneBusServer {
                 sendJson(exchange, 400, String.format("{\"success\":false,\"message\":\"Seat number must be between 1 and %d\"}", bus.totalSeats));
                 return;
             }
-            if (bus.bookings.containsKey(seatNo)) {
-                BookingRecord existing = bus.bookings.get(seatNo);
-                sendJson(exchange, 409, String.format("{\"success\":false,\"message\":\"Seat %d is already booked by %s\"}", seatNo, escapeJson(existing.passengerName)));
+            BookingRecord record;
+            try {
+                record = createBooking(busNo, passenger, seatNo);
+            } catch (SQLException exception) {
+                sendJson(exchange, 503, "{\"success\":false,\"message\":\"Booking service could not reach the database\"}");
                 return;
             }
-
-            // Confirm booking
-            BookingRecord record = new BookingRecord(nextId++, busNo, passenger, seatNo, new Date().toString(), "CONFIRMED");
-            bus.bookings.put(seatNo, record);
-            savePersistedBookings();
+            if (record == null) {
+                sendJson(exchange, 409, String.format("{\"success\":false,\"message\":\"Seat %d is already booked or unavailable\"}", seatNo));
+                return;
+            }
 
             System.out.println("[REAL-TIME BOOKING] Seat #" + seatNo + " confirmed for " + passenger + " on Bus " + busNo);
 
@@ -548,18 +675,40 @@ public class StandaloneBusServer {
             int busNo = Integer.parseInt(body.getOrDefault("busNumber", "101"));
             int seatNo = Integer.parseInt(body.getOrDefault("seatNumber", "0"));
 
-            Bus bus = busMap.get(busNo);
-            if (bus == null || !bus.bookings.containsKey(seatNo)) {
+            boolean cancelled;
+            try {
+                cancelled = cancelBooking(busNo, seatNo);
+            } catch (SQLException exception) {
+                sendJson(exchange, 503, "{\"success\":false,\"message\":\"Cancellation service could not reach the database\"}");
+                return;
+            }
+            if (!cancelled) {
                 sendJson(exchange, 404, "{\"success\":false,\"message\":\"No active booking found for this seat\"}");
                 return;
             }
 
-            BookingRecord removed = bus.bookings.remove(seatNo);
-            savePersistedBookings();
-
             System.out.println("[REAL-TIME CANCELLATION] Seat #" + seatNo + " cancelled on Bus " + busNo);
 
             sendJson(exchange, 200, String.format("{\"success\":true,\"message\":\"Booking cancelled successfully\",\"seatNo\":%d,\"busNo\":%d}", seatNo, busNo));
+        }
+    }
+
+    // GET /api/health
+    static class ApiHealthHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            boolean connected = databaseConnected;
+            if (connected) {
+                try (Connection ignored = databaseConnection()) {
+                    // Opening the connection makes the health value reflect the current database state.
+                } catch (SQLException exception) {
+                    connected = false;
+                    databaseConnected = false;
+                }
+            }
+            sendJson(exchange, 200, "{\"success\":true,\"databaseConfigured\":" + DATABASE_CONFIGURED
+                    + ",\"databaseConnected\":" + connected
+                    + ",\"persistence\":\"" + (connected ? "mysql" : "file") + "\"}");
         }
     }
 
@@ -685,21 +834,24 @@ public class StandaloneBusServer {
                 out.append("<h2 class='error'>Bus Not Found</h2>");
             } else if (seatNo < 1 || seatNo > bus.totalSeats) {
                 out.append("<h2 class='error'>Invalid Seat Number</h2>");
-            } else if (bus.bookings.containsKey(seatNo)) {
-                out.append("<h2 class='error'>Seat Already Booked</h2><p>Occupied by ").append(escapeHtml(bus.bookings.get(seatNo).passengerName)).append(".</p>");
             } else {
-                BookingRecord rec = new BookingRecord(nextId++, busNo, name, seatNo, new Date().toString(), "CONFIRMED");
-                bus.bookings.put(seatNo, rec);
-                savePersistedBookings();
-
-                out.append("<h2 class='success'>Booking Confirmed (Task 4 JDBC)</h2>")
-                   .append("<div class='details'>")
-                   .append("<p><b>Ticket ID:</b> #").append(rec.bookingId).append("</p>")
-                   .append("<p><b>Bus:</b> ").append(busNo).append(" (").append(bus.busName).append(")</p>")
-                   .append("<p><b>Passenger:</b> ").append(escapeHtml(name)).append("</p>")
-                   .append("<p><b>Seat Number:</b> ").append(seatNo).append("</p>")
-                   .append("<p><b>Persistence:</b> Live Database Synced</p>")
-                   .append("</div>");
+                try {
+                    BookingRecord rec = createBooking(busNo, name, seatNo);
+                    if (rec == null) {
+                        out.append("<h2 class='error'>Seat Already Booked</h2><p>Please choose another available seat.</p>");
+                    } else {
+                        out.append("<h2 class='success'>Booking Confirmed (Task 4 JDBC)</h2>")
+                           .append("<div class='details'>")
+                           .append("<p><b>Ticket ID:</b> #").append(rec.bookingId).append("</p>")
+                           .append("<p><b>Bus:</b> ").append(busNo).append(" (").append(bus.busName).append(")</p>")
+                           .append("<p><b>Passenger:</b> ").append(escapeHtml(name)).append("</p>")
+                           .append("<p><b>Seat Number:</b> ").append(seatNo).append("</p>")
+                           .append("<p><b>Persistence:</b> ").append(databaseConnected ? "MySQL synced" : "local preview mode").append("</p>")
+                           .append("</div>");
+                    }
+                } catch (SQLException exception) {
+                    out.append("<h2 class='error'>Database Error</h2><p>Unable to store this booking.</p>");
+                }
             }
 
             out.append("<div style='margin-top: 16px;'>")
@@ -721,12 +873,14 @@ public class StandaloneBusServer {
             Bus bus = busMap.get(busNo);
             StringBuilder out = new StringBuilder("<!DOCTYPE html><html>").append(CSS_HEAD).append("<body><div class='card'>");
 
-            if (bus == null || !bus.bookings.containsKey(seatNo)) {
-                out.append("<h2 class='error'>Cancellation Failed</h2><p>No active booking found for Seat ").append(seatNo).append(".</p>");
-            } else {
-                bus.bookings.remove(seatNo);
-                savePersistedBookings();
-                out.append("<h2 class='success'>Booking Cancelled (JDBC)</h2><p>Seat ").append(seatNo).append(" is now released.</p>");
+            try {
+                if (!cancelBooking(busNo, seatNo)) {
+                    out.append("<h2 class='error'>Cancellation Failed</h2><p>No active booking found for Seat ").append(seatNo).append(".</p>");
+                } else {
+                    out.append("<h2 class='success'>Booking Cancelled (JDBC)</h2><p>Seat ").append(seatNo).append(" is now released.</p>");
+                }
+            } catch (SQLException exception) {
+                out.append("<h2 class='error'>Database Error</h2><p>Unable to cancel this booking.</p>");
             }
 
             out.append("<div style='margin-top: 16px;'>")
