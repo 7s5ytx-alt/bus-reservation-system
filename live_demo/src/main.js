@@ -30,7 +30,7 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: Number(bookingQuery.get('bus')) || 101, selectedSeat: null, seats: [], connected: false, searched: isBookingPage, travelDate: bookingQuery.get('date') || '', passengers: bookingQuery.get('passengers') || '', passengerName: '', lastSyncedAt: null, searchFrom: bookingQuery.get('from') || '', searchTo: bookingQuery.get('to') || '', searchError: '', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null
+  ], selectedBusNo: Number(bookingQuery.get('bus')) || 101, selectedSeat: null, seats: [], connected: false, searched: isBookingPage, travelDate: bookingQuery.get('date') || '', passengers: bookingQuery.get('passengers') || '', passengerName: '', lastSyncedAt: null, searchFrom: bookingQuery.get('from') || '', searchTo: bookingQuery.get('to') || '', searchError: '', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null, cityPicker: '', cityFilter: '', tracking: null, serviceFilter: 'All', sortBy: 'recommended'
 };
 const coupons = {
   WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
@@ -43,6 +43,16 @@ const matchingBuses = () => state.buses.filter((bus) =>
   bus.src.toLowerCase() === state.searchFrom.trim().toLowerCase()
   && bus.dest.toLowerCase() === state.searchTo.trim().toLowerCase()
 );
+const timeValue = (time) => Number(String(time).replace(':', '')) || 9999;
+function visibleServices() {
+  const filtered = matchingBuses().filter((bus) => state.serviceFilter === 'All' || bus.serviceType.toLowerCase().includes(state.serviceFilter.toLowerCase()));
+  return [...filtered].sort((a, b) => {
+    if (state.sortBy === 'price') return a.fare - b.fare;
+    if (state.sortBy === 'departure') return timeValue(a.departure) - timeValue(b.departure);
+    if (state.sortBy === 'availability') return availableFor(b) - availableFor(a);
+    return b.rating - a.rating || a.fare - b.fare;
+  });
+}
 const fallbackSeats = (bus) => Array.from({ length: bus.totalSeats }, (_, index) => ({ seatNo: index + 1, isBooked: false, passenger: '' }));
 const discountFor = (fare) => coupons[state.coupon]?.discount(fare) ?? 0;
 const bookingTotal = (fare) => Math.max(0, fare - discountFor(fare));
@@ -145,9 +155,9 @@ function renderSearchForm(cities) {
 }
 
 function render() {
-  const services = matchingBuses();
+  const services = visibleServices();
   const cities = [...new Set(state.buses.flatMap((service) => [service.src, service.dest]))].sort();
-  const results = `<section class="results visible" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><a class="modify-link" href="/">← New search</a></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No direct service found for this route.</strong><span>Try another city pair from the search above.</span></div>`}</section>`;
+  const results = `<section class="results visible" id="results"><div class="section-heading"><div><p class="eyebrow">Available journeys</p><h2>${escapeHtml(state.searchFrom)} <b>→</b> ${escapeHtml(state.searchTo)}</h2><p>${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} · ${services.length} service${services.length === 1 ? '' : 's'} found</p></div><a class="modify-link" href="/">← New search</a></div><div class="service-toolbar"><div class="filter-chips">${['All','Sleeper','Seater','Volvo'].map((filter) => `<button type="button" class="filter-chip ${state.serviceFilter === filter ? 'active' : ''}" data-filter="${filter}">${filter}</button>`).join('')}</div><label>Sort by <select id="sort-services"><option value="recommended" ${state.sortBy === 'recommended' ? 'selected' : ''}>Recommended</option><option value="price" ${state.sortBy === 'price' ? 'selected' : ''}>Lowest fare</option><option value="departure" ${state.sortBy === 'departure' ? 'selected' : ''}>Earliest departure</option><option value="availability" ${state.sortBy === 'availability' ? 'selected' : ''}>Most seats available</option></select></label></div>${services.length ? `<div class="journey-layout"><div class="service-list">${services.map(renderService).join('')}</div><aside class="booking-panel">${renderPanel()}</aside></div>` : `<div class="empty-results"><strong>No services match these filters.</strong><span>Try selecting All or adjusting your search.</span></div>`}</section>`;
   const home = `<main id="top"><section class="hero" id="search"><div class="hero-copy"><p class="eyebrow">Simple, reliable bus travel</p><h1>Go somewhere<br><em>worth waking up for.</em></h1><p>Compare comfortable buses, choose your exact seat, and book in a few moments.</p></div>${renderSearchForm(cities)}<div class="trust"><span>✓ Free seat selection</span><span>✓ Instant confirmation</span><span>✓ Secure checkout</span><span>↗ Live GPS where enabled</span></div></section><section class="popular-section" aria-labelledby="popular-title"><div class="popular-heading"><div><p class="eyebrow">Popular this week</p><h2 id="popular-title">Buses travellers are booking now.</h2></div><span><i class="live-dot"></i> Live seat availability</span></div><div class="popular-grid">${state.buses.slice(0, 4).map(renderPopularBus).join('')}</div></section><section class="how" id="how-it-works"><p class="eyebrow">Built for a smooth journey</p><h2>Book the seat you actually want.</h2><div class="features"><article><b>01</b><h3>Find your ride</h3><p>Search reliable services on the route you need.</p></article><article><b>02</b><h3>Pick your seat</h3><p>See live availability and select your preferred spot.</p></article><article><b>03</b><h3>Travel easy</h3><p>Receive your booking confirmation instantly.</p></article></div></section></main>`;
   const booking = `<main id="top" class="booking-page"><section class="booking-search" id="search"><p class="eyebrow">Plan your ride</p><h1>Find the right bus.</h1>${renderSearchForm(cities)}</section>${results}</main>`;
   document.querySelector('#app').innerHTML = `<header class="topbar"><a class="brand" href="/"><b>T</b>triply</a><nav><a class="${isBookingPage ? '' : 'active'}" href="/">Bus tickets</a><a class="${isBookingPage ? 'active' : ''}" href="/booking.html">My booking</a><a href="/driver.html">Driver portal</a><a href="/admin.html">Agency portal</a></nav><div class="status ${state.connected ? 'online' : ''}"><i></i>${state.connected ? 'Live updates on' : 'Preview mode'}</div></header>${isBookingPage ? booking : home}<footer id="support"><span>triply · Made for unhurried journeys</span><span>Need help? support@triply.example</span></footer>${renderPaymentModal()}`;
@@ -189,6 +199,9 @@ function bindEvents() {
   };
   const modifySearch = document.querySelector('#modify-search');
   if (modifySearch) modifySearch.addEventListener('click', () => document.querySelector('#search').scrollIntoView({ behavior: 'smooth' }));
+  document.querySelectorAll('.filter-chip').forEach((button) => button.addEventListener('click', () => { state.serviceFilter = button.dataset.filter; render(); }));
+  const sortServices = document.querySelector('#sort-services');
+  if (sortServices) sortServices.addEventListener('change', (event) => { state.sortBy = event.target.value; render(); });
   document.querySelectorAll('.service-card').forEach((card) => card.addEventListener('click', async () => { state.selectedBusNo = Number(card.dataset.bus); state.selectedSeat = null; await refreshAvailability(); await refreshTracking(); render(); }));
   const refreshTrack = document.querySelector('#refresh-track');
   if (refreshTrack) refreshTrack.addEventListener('click', async () => { refreshTrack.textContent = 'Checking…'; await refreshTracking(); render(); });
