@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: bus-reservation-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/buses

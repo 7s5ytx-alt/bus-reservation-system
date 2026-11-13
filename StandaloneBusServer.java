@@ -19,7 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * - Connects to MySQL if available, with auto persistent file fallback
  */
 public class StandaloneBusServer {
-    private static final int PORT = 8080;
+    // Render and other cloud hosts provide the public port through PORT.
+    // Local development continues to use port 8080.
+    private static final int PORT = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
 
     // Bus Model
     public static class Bus {
