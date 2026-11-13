@@ -28,7 +28,7 @@ const state = {
     { busNo: 106, name: 'Pink City Volvo', src: 'Delhi', dest: 'Jaipur', totalSeats: 36, ...tripDetails[106] },
     { busNo: 107, name: 'Western Ghats Travels', src: 'Pune', dest: 'Mumbai', totalSeats: 34, ...tripDetails[107] },
     { busNo: 108, name: 'Coastal Connect', src: 'Vijayawada', dest: 'Hyderabad', totalSeats: 30, ...tripDetails[108] }
-  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi'
+  ], selectedBusNo: 101, selectedSeat: null, seats: [], connected: false, searched: false, travelDate: tomorrow, passengerName: '', lastSyncedAt: null, searchFrom: 'Bangalore', searchTo: 'Chennai', coupon: '', couponMessage: '', paymentOpen: false, paymentMethod: 'upi', bookingStatus: 'payment', ticket: null
 };
 const coupons = {
   WELCOME10: { label: '10% off up to ₹150', discount: (fare) => Math.min(Math.round(fare * 0.10), 150) },
@@ -44,6 +44,7 @@ const matchingBuses = () => state.buses.filter((bus) =>
 const fallbackSeats = (bus) => Array.from({ length: bus.totalSeats }, (_, index) => ({ seatNo: index + 1, isBooked: false, passenger: '' }));
 const discountFor = (fare) => coupons[state.coupon]?.discount(fare) ?? 0;
 const bookingTotal = (fare) => Math.max(0, fare - discountFor(fare));
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function refreshAvailability() {
   const bus = activeBus();
@@ -102,7 +103,11 @@ function renderPanel() {
 function renderPaymentModal() {
   if (!state.paymentOpen) return '';
   const bus = activeBus(); const total = bookingTotal(bus.fare);
-  return `<div class="modal-backdrop" role="presentation"><section class="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title"><button class="modal-close" id="close-payment" aria-label="Close checkout">×</button><div class="checkout-badge">Secure demo checkout</div><h2 id="payment-title">Almost there, ${escapeHtml(state.passengerName.split(' ')[0] || 'traveller')}.</h2><p class="modal-subtitle">This is a practice payment screen. No money will be charged.</p><div class="payment-trip"><span>${escapeHtml(bus.src)} <b>→</b> ${escapeHtml(bus.dest)}</span><small>${escapeHtml(bus.name)} · Seat ${state.selectedSeat} · ${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small></div><div class="payment-methods"><button class="payment-method ${state.paymentMethod === 'upi' ? 'selected' : ''}" data-method="upi"><b>UPI</b><span>Google Pay, PhonePe & more</span></button><button class="payment-method ${state.paymentMethod === 'card' ? 'selected' : ''}" data-method="card"><b>Card</b><span>Credit or debit card</span></button></div><div class="demo-payment"><span>${state.paymentMethod === 'upi' ? 'UPI ID' : 'Card number'}</span><strong>${state.paymentMethod === 'upi' ? 'traveller@triply' : '•••• 4242'}</strong><small>Demo details only</small></div><div class="payment-total"><span>Total payable</span><strong>${money.format(total)}</strong></div><button class="confirm-payment" id="confirm-payment">Pay ${money.format(total)} securely <b>→</b></button><p class="security-note">🔒 Demo mode — this creates a reservation only.</p></section></div>`;
+  const details = `<div class="payment-trip"><span>${escapeHtml(bus.src)} <b>→</b> ${escapeHtml(bus.dest)}</span><small>${escapeHtml(bus.name)} · Seat ${state.selectedSeat} · ${new Date(`${state.travelDate}T12:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small></div>`;
+  if (state.bookingStatus === 'processing' || state.bookingStatus === 'pending') return `<div class="modal-backdrop" role="presentation"><section class="payment-modal status-card" role="dialog" aria-modal="true"><div class="status-orbit"><i></i><b>${state.bookingStatus === 'processing' ? '₹' : '✓'}</b></div><div class="checkout-badge">${state.bookingStatus === 'processing' ? 'Payment processing' : 'Ticket pending'}</div><h2>${state.bookingStatus === 'processing' ? 'Verifying your demo payment' : 'Holding your favourite seat'}</h2><p class="modal-subtitle">${state.bookingStatus === 'processing' ? 'Please keep this screen open for a moment.' : 'We are confirming live seat availability with the operator.'}</p>${details}<div class="status-steps"><span class="done">Payment initiated</span><span class="${state.bookingStatus === 'pending' ? 'active' : ''}">Seat confirmation</span><span>Ticket issued</span></div></section></div>`;
+  if (state.bookingStatus === 'confirmed' && state.ticket) return `<div class="modal-backdrop" role="presentation"><section class="payment-modal confirmation-card" role="dialog" aria-modal="true"><div class="success-check">✓</div><div class="checkout-badge">Ticket confirmed</div><h2>Your journey is booked!</h2><p class="modal-subtitle">A demo confirmation has been created. Have a wonderful trip.</p><div class="ticket"><div><span>Booking ID</span><strong>#${escapeHtml(state.ticket.id)}</strong></div><div><span>Passenger</span><strong>${escapeHtml(state.ticket.name)}</strong></div><div><span>Seat</span><strong>${state.ticket.seat}</strong></div><div><span>Paid</span><strong>${money.format(state.ticket.total)}</strong></div></div>${details}<button class="confirm-payment" id="close-confirmation">Done</button></section></div>`;
+  if (state.bookingStatus === 'failed') return `<div class="modal-backdrop" role="presentation"><section class="payment-modal status-card" role="dialog" aria-modal="true"><div class="failed-mark">!</div><div class="checkout-badge">Action needed</div><h2>We could not confirm that seat.</h2><p class="modal-subtitle">${escapeHtml(state.ticket?.message || 'The seat may have just been selected by another traveller.')}</p>${details}<button class="confirm-payment" id="retry-payment">Choose another seat</button></section></div>`;
+  return `<div class="modal-backdrop" role="presentation"><section class="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title"><button class="modal-close" id="close-payment" aria-label="Close checkout">×</button><div class="checkout-badge">Secure demo checkout</div><h2 id="payment-title">Almost there, ${escapeHtml(state.passengerName.split(' ')[0] || 'traveller')}.</h2><p class="modal-subtitle">This is a practice payment screen. No money will be charged.</p>${details}<div class="payment-methods"><button class="payment-method ${state.paymentMethod === 'upi' ? 'selected' : ''}" data-method="upi"><b>UPI</b><span>Google Pay, PhonePe & more</span></button><button class="payment-method ${state.paymentMethod === 'card' ? 'selected' : ''}" data-method="card"><b>Card</b><span>Credit or debit card</span></button></div><div class="demo-payment"><span>${state.paymentMethod === 'upi' ? 'UPI ID' : 'Card number'}</span><strong>${state.paymentMethod === 'upi' ? 'traveller@triply' : '•••• 4242'}</strong><small>Demo details only</small></div><div class="payment-total"><span>Total payable</span><strong>${money.format(total)}</strong></div><button class="confirm-payment" id="confirm-payment">Pay ${money.format(total)} securely <b>→</b></button><p class="security-note">🔒 Demo mode — this creates a reservation only.</p></section></div>`;
 }
 
 function render() {
@@ -142,6 +147,7 @@ function bindEvents() {
     state.passengerName = passenger.value.trim();
     if (!state.passengerName || !state.selectedSeat) return;
     state.paymentOpen = true;
+    state.bookingStatus = 'payment';
     render();
   });
   const applyCoupon = document.querySelector('#apply-coupon');
@@ -156,17 +162,20 @@ function bindEvents() {
   document.querySelectorAll('.payment-method').forEach((button) => button.addEventListener('click', () => { state.paymentMethod = button.dataset.method; render(); }));
   const confirmPayment = document.querySelector('#confirm-payment');
   if (confirmPayment) confirmPayment.addEventListener('click', bookSeat);
+  const closeConfirmation = document.querySelector('#close-confirmation');
+  if (closeConfirmation) closeConfirmation.addEventListener('click', () => { state.paymentOpen = false; state.bookingStatus = 'payment'; state.ticket = null; render(); });
+  const retryPayment = document.querySelector('#retry-payment');
+  if (retryPayment) retryPayment.addEventListener('click', () => { state.paymentOpen = false; state.bookingStatus = 'payment'; state.ticket = null; state.selectedSeat = null; render(); });
 }
 
 async function bookSeat(event) {
   event.preventDefault(); const message = document.querySelector('#booking-message'); const name = state.passengerName.trim(); if (!name || !state.selectedSeat) return;
-  const button = event.currentTarget; button.disabled = true; button.textContent = 'Reserving your seat…';
+  state.bookingStatus = 'processing'; render(); await wait(850); state.bookingStatus = 'pending'; render(); await wait(650);
   try {
     const response = await fetch(`${API_BASE}/book`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ busNumber: state.selectedBusNo, seatNumber: state.selectedSeat, passengerName: name }) });
     const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.message || 'Booking could not be completed.');
-    state.paymentOpen = false; state.coupon = ''; state.couponMessage = ''; state.passengerName = ''; state.selectedSeat = null; await refreshAvailability(); render();
-    const liveMessage = document.querySelector('#booking-message'); liveMessage.className = 'success'; liveMessage.textContent = `Confirmed! Booking #${data.bookingId} · Seat ${data.seatNo} is reserved for ${name}.`;
-  } catch (error) { state.paymentOpen = false; render(); const liveMessage = document.querySelector('#booking-message'); liveMessage.className = 'error'; liveMessage.textContent = error.message || 'Unable to reach the booking server.'; }
+    state.ticket = { id: data.bookingId, seat: data.seatNo, name, total: bookingTotal(activeBus().fare) }; state.coupon = ''; state.couponMessage = ''; state.passengerName = ''; await refreshAvailability(); state.bookingStatus = 'confirmed'; render();
+  } catch (error) { state.ticket = { message: error.message || 'Unable to reach the booking server.' }; state.bookingStatus = 'failed'; render(); }
 }
 
 await loadBuses();
