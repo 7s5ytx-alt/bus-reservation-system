@@ -129,10 +129,10 @@ function renderSeatMap() {
     ? `<button type="button" class="seat ${seat.isBooked ? 'booked' : ''} ${seat.seatNo === state.selectedSeat ? 'chosen' : ''}" data-seat="${seat.seatNo}" ${seat.isBooked ? 'disabled' : ''} aria-label="Seat ${seat.seatNo}${seat.isBooked ? ', booked' : ', available'}">${seat.seatNo}</button>`
     : '<span class="seat-placeholder" aria-hidden="true"></span>';
   const rows = Array.from({ length: Math.ceil(state.seats.length / 4) }, (_, row) => state.seats.slice(row * 4, row * 4 + 4));
-  const driverAfterRow = Math.max(1, Math.floor(rows.length / 2));
-  return rows.map((row, index) => {
+  const coachFront = `<div class="coach-front"><div class="driver-cabin"><span class="steering-wheel">◉</span><span><b>Driver</b><small>Front</small></span></div><span class="front-aisle" aria-hidden="true"></span><div class="entry-door"><b>Entry</b><small>Door</small></div></div>`;
+  return coachFront + rows.map((row) => {
     const seatRow = `<div class="seat-row">${seatButton(row[0])}${seatButton(row[1])}<span class="seat-aisle" aria-hidden="true"></span>${seatButton(row[2])}${seatButton(row[3])}</div>`;
-    return `${seatRow}${index + 1 === driverAfterRow ? '<div class="driver" aria-label="Driver cabin">Driver cabin</div>' : ''}`;
+    return seatRow;
   }).join('');
 }
 
@@ -145,7 +145,7 @@ function renderPanel() {
   return `<div class="panel-heading"><div><p class="eyebrow">Choose your seat</p><h2>${escapeHtml(bus.name)}</h2></div><span>${escapeHtml(bus.type)}</span></div>
     <section class="tracking-card ${liveTrack ? 'live' : ''}"><div class="tracking-head"><div><b>${liveTrack ? '● Live bus location' : '○ Driver GPS offline'}</b><small>${liveTrack ? `Updated ${updated} · ${Math.round(state.tracking.accuracy || 0)}m accuracy` : `Driver ${escapeHtml(bus.driverName)} has not started sharing yet`}</small></div><button type="button" id="refresh-track">Refresh</button></div><div class="route-map"><span>${escapeHtml(bus.src)}</span><i></i><em class="bus-marker">🚌</em><span>${escapeHtml(bus.dest)}</span></div></section>
     <div class="legend"><i></i> Available <i class="key-selected"></i> Selected <i class="key-booked"></i> Booked</div>
-    <div class="bus-shell"><div class="wheel">◔</div><div class="seat-grid">${renderSeatMap()}</div></div>
+    <div class="bus-shell"><div class="coach-labels"><span>Front of bus</span><span>Rear</span></div><div class="wheel">◔</div><div class="seat-grid">${renderSeatMap()}</div></div>
     <form id="checkout-form" class="checkout"><label for="passenger">Passenger details <span class="field-hint">${selected ? 'Required for your ticket' : 'Choose a seat to continue'}</span></label><input id="passenger" placeholder="Full name as on ID" maxlength="100" value="${escapeHtml(state.passengerName)}" required ${selected ? '' : 'disabled'}>
       <label class="coupon-label" for="coupon">Promo code <span class="field-hint">${selected ? 'Optional' : 'Unlocks after seat selection'}</span></label><div class="coupon-row"><input id="coupon" placeholder="Enter coupon code" value="${escapeHtml(state.coupon)}" ${selected ? '' : 'disabled'}><button type="button" id="apply-coupon" ${selected ? '' : 'disabled'}>Apply</button></div><div class="coupon-chips">${Object.entries(coupons).map(([code, offer]) => `<button type="button" class="coupon-chip ${state.coupon === code ? 'active' : ''}" data-coupon="${code}" ${selected ? '' : 'disabled'}><b>${code}</b><span>${offer.label}</span></button>`).join('')}</div><p class="coupon-message ${state.couponMessage.startsWith('Applied') ? 'valid' : ''}">${escapeHtml(state.couponMessage || (selected ? 'Select an offer or enter a promo code.' : 'Choose a seat to unlock promo codes.'))}</p>
       <div class="price-lines"><div><span>${selected ? `Seat ${selected.seatNo}` : 'Select a seat'}</span><strong>${selected ? money.format(fare) : '—'}</strong></div>${discount ? `<div class="discount"><span>Coupon discount</span><strong>−${money.format(discount)}</strong></div>` : ''}<div class="total"><span>Total payable</span><strong>${selected ? money.format(bookingTotal(fare)) : '—'}</strong></div></div>
