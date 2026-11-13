@@ -125,15 +125,14 @@ function renderPopularBus(bus) {
 }
 
 function renderSeatMap() {
-  // Keep each section of the coach aligned as 2 + aisle + 2 seats. Splitting
-  // after a full row prevents the driver divider from leaving an empty half-row.
-  const splitAt = Math.max(4, Math.floor(state.seats.length / 8) * 4);
-  return state.seats.map((seat, index) => {
-    const startsRearSection = index === splitAt;
-    const localIndex = index < splitAt ? index : index - splitAt;
-    const rightSide = localIndex % 4 >= 2 ? 'seat-right' : '';
-    const divider = startsRearSection ? '<div class="driver" aria-label="Driver cabin">Driver cabin</div>' : '';
-    return `${divider}<button type="button" class="seat ${rightSide} ${seat.isBooked ? 'booked' : ''} ${seat.seatNo === state.selectedSeat ? 'chosen' : ''}" data-seat="${seat.seatNo}" ${seat.isBooked ? 'disabled' : ''} aria-label="Seat ${seat.seatNo}${seat.isBooked ? ', booked' : ', available'}">${seat.seatNo}</button>`;
+  const seatButton = (seat) => seat
+    ? `<button type="button" class="seat ${seat.isBooked ? 'booked' : ''} ${seat.seatNo === state.selectedSeat ? 'chosen' : ''}" data-seat="${seat.seatNo}" ${seat.isBooked ? 'disabled' : ''} aria-label="Seat ${seat.seatNo}${seat.isBooked ? ', booked' : ', available'}">${seat.seatNo}</button>`
+    : '<span class="seat-placeholder" aria-hidden="true"></span>';
+  const rows = Array.from({ length: Math.ceil(state.seats.length / 4) }, (_, row) => state.seats.slice(row * 4, row * 4 + 4));
+  const driverAfterRow = Math.max(1, Math.floor(rows.length / 2));
+  return rows.map((row, index) => {
+    const seatRow = `<div class="seat-row">${seatButton(row[0])}${seatButton(row[1])}<span class="seat-aisle" aria-hidden="true"></span>${seatButton(row[2])}${seatButton(row[3])}</div>`;
+    return `${seatRow}${index + 1 === driverAfterRow ? '<div class="driver" aria-label="Driver cabin">Driver cabin</div>' : ''}`;
   }).join('');
 }
 
