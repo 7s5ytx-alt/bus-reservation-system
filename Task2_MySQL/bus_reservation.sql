@@ -27,6 +27,8 @@ CREATE TABLE booking (
     seat_no INT NOT NULL,
     booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     status ENUM('CONFIRMED', 'CANCELLED') DEFAULT 'CONFIRMED',
+    -- TiDB requires an explicit index on a foreign-key child column.
+    INDEX idx_booking_bus_no (bus_no),
     FOREIGN KEY (bus_no) REFERENCES bus(bus_no) ON DELETE CASCADE,
     -- NULL for cancelled rows allows booking the seat again after cancellation.
     -- A confirmed row receives a stable per-bus/per-seat key, which prevents
