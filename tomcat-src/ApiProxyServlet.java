@@ -17,9 +17,32 @@ public class ApiProxyServlet extends HttpServlet {
     private static final String INTERNAL_BASE = "http://127.0.0.1:" +
         System.getenv().getOrDefault("INTERNAL_PORT", "10001");
 
+    private boolean isAllowedOrigin(String origin) {
+        if (origin == null || origin.isBlank()) return false;
+        String configured = System.getenv().getOrDefault("CORS_ORIGIN", "https://livedemo-olive.vercel.app");
+        return origin.equals(configured)
+            || origin.matches("https://livedemo-[a-z0-9-]+\\.vercel\\.app")
+            || origin.matches("http://localhost(:[0-9]+)?");
+    }
+
+    private void addCorsHeaders(HttpServletRequest request, HttpServletResponse response) {
+        String origin = request.getHeader("Origin");
+        if (!isAllowedOrigin(origin)) return;
+        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Vary", "Origin");
+        response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Key, X-Driver-Key");
+        response.setHeader("Access-Control-Max-Age", "86400");
+    }
+
     @Override
     protected void service(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+        addCorsHeaders(request, response);
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+            return;
+        }
         String path = request.getRequestURI();
         String query = request.getQueryString();
         URL target = new URL(INTERNAL_BASE + path + (query == null ? "" : "?" + query));
