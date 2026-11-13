@@ -1,6 +1,8 @@
 import './style.css';
 
-const API_BASE = 'http://localhost:8080/api';
+// Set VITE_API_BASE to the public Java API URL when deploying. Local development
+// keeps using the standalone server on port 8080.
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080/api';
 const money = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 const state = {
