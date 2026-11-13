@@ -61,7 +61,9 @@ public class StandaloneBusServer {
 
     private static final Map<Integer, Bus> busMap = new ConcurrentHashMap<>();
     private static int nextId = 100;
-    private static final File PERSISTENCE_FILE = new File("d:/New folder/New folder/bookings_store.txt");
+    // Local development can override this path; cloud hosts use the working
+    // directory. For durable cloud reservations, use the JDBC database module.
+    private static final File PERSISTENCE_FILE = new File(System.getenv().getOrDefault("BOOKINGS_FILE", "bookings_store.txt"));
 
     static {
         // Initialize default buses
